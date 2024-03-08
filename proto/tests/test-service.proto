@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package grpc.test;
+
+service Test {
+  rpc Request(TestRequest) returns (TestResponse) {};
+}
+
+message TestRequest { int32 timeoutMs = 1; }
+message TestResponse { string status = 1; }

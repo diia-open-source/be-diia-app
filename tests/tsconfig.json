@@ -1,0 +1,9 @@
+{
+    "extends": "@diia-inhouse/configs/tsconfig",
+    "compilerOptions": {
+        "baseUrl": "../",
+        "noEmit": true,
+        "strict": true
+    },
+    "include": ["./**/*"]
+}
