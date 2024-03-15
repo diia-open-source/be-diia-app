@@ -26,7 +26,7 @@ This repository contains the package which provides service bootstrap functional
 Example:
 
 ```
-git clone https://github.com/diia-open-source/diia-app.git
+git clone https://github.com/diia-open-source/be-diia-app.git diia-app
 ```
 
 ---

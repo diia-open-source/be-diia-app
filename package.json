@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "12.2.0",
+    "version": "12.2.1",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
     "types": "dist/types/index.d.ts",
