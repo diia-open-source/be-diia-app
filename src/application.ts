@@ -128,7 +128,7 @@ export class Application<TContext extends ServiceContext> {
             const parsedPath = path.parse(descriptor.path)
             const fileName = parsedPath.name
             const dependencyPath = parsedPath.dir
-                .split(`dist/${folderName}`)[1]
+                .split(`dist${path.sep}${folderName}`)[1]
                 .split(path.sep)
                 .map((p) => upperFirst(p))
 
