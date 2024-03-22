@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks'
 import { randomUUID } from 'crypto'
+import path from 'path'
 
 import {
     GrpcObject,
@@ -109,11 +110,11 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         }
 
         const externalProtos = await glob('node_modules/@diia-inhouse/**/proto/**/*.proto')
-        const externalProtosPaths = uniq(externalProtos.map((value) => value.substring(0, value.lastIndexOf('/'))))
+        const externalProtosPaths = uniq(externalProtos.map((value) => value.substring(0, value.lastIndexOf(path.sep))))
         const myProtosDir = 'proto'
         const services = this.envService.getVar<string[]>('GRPC_SERVICES', 'object')
         const myProtos = (await glob(`${myProtosDir}/**/*.proto`)).map((protoPath) =>
-            protoPath.slice(protoPath.indexOf(`${myProtosDir}/`) + `${myProtosDir}/`.length),
+            protoPath.slice(protoPath.indexOf(`${myProtosDir}${path.sep}`) + `${myProtosDir}${path.sep}`.length),
         )
         const pkgDefs = await load(myProtos, {
             keepCase: true,
