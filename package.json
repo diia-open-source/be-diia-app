@@ -91,7 +91,8 @@
         "@types/pluralize": "0.0.33",
         "lockfile-lint": "4.12.1",
         "madge": "6.1.0",
-        "type-fest": "4.8.2"
+        "type-fest": "^4.8.1",
+        "typescript": "5.3.3"
     },
     "jest": {
         "preset": "@diia-inhouse/configs/dist/jest"
