@@ -1,4 +1,3 @@
-import kleur from 'kleur'
 import { LogLevels, Loggers } from 'moleculer'
 
 import { LogLevel, Logger } from '@diia-inhouse/types'
@@ -15,8 +14,6 @@ export default class MoleculerLogger extends Loggers.Base {
 
     constructor(private logger: Logger) {
         super()
-
-        this.resetColors()
     }
 
     getLogHandler(): Loggers.LogHandler | null {
@@ -27,7 +24,7 @@ export default class MoleculerLogger extends Loggers.Base {
                 return
             }
 
-            if (args.length) {
+            if (args.length > 0) {
                 let data: unknown = args
                 if (args.length === 1) {
                     data = args[0]
@@ -40,11 +37,5 @@ export default class MoleculerLogger extends Loggers.Base {
 
             this.logger[level](msg)
         }
-    }
-
-    resetColors(): void {
-        const colorizer = kleur
-
-        colorizer.enabled = false
     }
 }

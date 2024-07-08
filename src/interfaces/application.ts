@@ -1,35 +1,34 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { AwilixContainer, BuildResolverOptions, Resolver } from 'awilix'
+import { AwilixContainer, NameAndRegistrationPair } from 'awilix'
 import { NameFormatter } from 'awilix/lib/load-modules'
 
 import { EnvService } from '@diia-inhouse/env'
 import { GenericObject } from '@diia-inhouse/types'
 
 import { BaseConfig } from './config'
-import { BaseDeps, ExternallyRegisteredDeps, InternallyRegisteredDeps } from './deps'
+import { BaseDeps } from './deps'
 
-export type DepsResolver<T> = {
-    [U in keyof T]: Resolver<T[U]>
-}
-
-export interface ServiceContext<TConfig extends GenericObject = any, TDeps extends GenericObject = any> {
+export interface ServiceContext<TConfig extends BaseConfig = BaseConfig, TDeps extends object = object> {
     config: TConfig
-    container: AwilixContainer<TDeps>
-    deps: TDeps
+    container: AwilixContainer<TDeps & BaseDeps>
 }
 
-export type ConfigType<TConfig> = TConfig extends ServiceContext<infer T, any> ? T : never
+export type AppConfigType<TContext> = TContext extends ServiceContext<infer T> ? T : never
 
-export type DepsType<TDeps> = TDeps extends ServiceContext<any, infer T> ? T : never
+export type AppDepsType<TContext> = TContext extends ServiceContext<GenericObject, infer T> ? T : never
+
+export type DepsType<TContext> = AppDepsType<TContext> & BaseDeps<AppConfigType<TContext>>
 
 export type ConfigFactoryFn<TConfig extends GenericObject = GenericObject> = (
     envService: EnvService,
     serviceName: string,
 ) => Promise<TConfig>
 
+export type DepsFactory<TDeps> = Partial<BaseDeps> & Omit<TDeps, 'config'>
+
 export type DepsFactoryFn<TConfig extends BaseConfig = BaseConfig, TDeps extends GenericObject = GenericObject> = (
     config: TConfig,
-) => DepsResolver<ExternallyRegisteredDeps & Partial<InternallyRegisteredDeps> & TDeps>
+    baseDeps: AwilixContainer<BaseDeps<TConfig>>,
+) => Promise<NameAndRegistrationPair<DepsFactory<TDeps>>>
 
 export interface ServiceOperator<TConfig extends GenericObject, TDeps extends GenericObject>
     extends ServiceContext<BaseConfig & TConfig, BaseDeps & TDeps> {
@@ -41,7 +40,5 @@ export interface LoadDepsFromFolderOptions {
     folderName: string
     fileMask?: string
     nameFormatter?: NameFormatter
-    resolverOptions?: BuildResolverOptions<unknown>
     groupName?: string
-    pluginGroupName?: string
 }

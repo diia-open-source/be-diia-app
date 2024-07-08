@@ -6,19 +6,16 @@ import ActionVisitor from '../../../../src/plugins/openapi/actionVisitor'
 jest.mock('../../../../src/plugins/openapi/parser')
 jest.mock('typescript', () => {
     const mocked = <Record<string, unknown>>jest.createMockFromModule('typescript')
-    const isMethodDeclaration = (): boolean => true
-    const isClassDeclaration = (): boolean => true
-    const visitNode = (node: unknown, visitClassNode: (node: unknown) => void): void => {
-        visitClassNode(node)
-    }
 
     return {
         ...mocked,
         visitEachChild: jest.fn(),
         getModifiers: jest.fn(),
-        isClassDeclaration,
-        isMethodDeclaration,
-        visitNode,
+        isClassDeclaration: (): boolean => true,
+        isMethodDeclaration: (): boolean => true,
+        visitNode: (node: unknown, visitClassNode: (node: unknown) => void): void => {
+            visitClassNode(node)
+        },
     }
 })
 
@@ -51,7 +48,7 @@ const transformationContextMock = {
     },
 }
 
-describe(`OpenApi ${ActionVisitor.name}`, () => {
+describe(`OpenApi ActionVisitor`, () => {
     describe(`method ${ActionVisitor.visit.name}`, () => {
         const nodeWithHandler = {
             members: [

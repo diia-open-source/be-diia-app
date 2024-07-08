@@ -1,17 +1,10 @@
-import { CryptoDeps } from '@diia-inhouse/crypto'
-import { DatabaseService } from '@diia-inhouse/db'
-import { QueueDeps } from '@diia-inhouse/diia-queue'
-import { HealthCheck } from '@diia-inhouse/healthcheck'
-import { RedisDeps } from '@diia-inhouse/redis'
-import TestKit from '@diia-inhouse/test'
+import { HashService } from '@diia-inhouse/crypto'
 
-import { AppConfig } from './config'
+import { CallOptions } from '../../../src'
+import { TestClient, TestPrivateClient } from '../generated/test-service'
 
 export type AppDeps = {
-    config: AppConfig
-    healthCheck: HealthCheck
-    database: DatabaseService
-    testKit: TestKit
-} & QueueDeps &
-    RedisDeps &
-    CryptoDeps
+    hash: HashService
+    testServiceClient: TestClient<CallOptions>
+    testPrivateServiceClient: TestPrivateClient<CallOptions>
+}

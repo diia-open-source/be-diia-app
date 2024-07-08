@@ -18,7 +18,7 @@ export default {
 
             const dt = Date.parse(object)
 
-            if (isNaN(dt)) {
+            if (Number.isNaN(dt)) {
                 return this.fromObject(object)
             }
 

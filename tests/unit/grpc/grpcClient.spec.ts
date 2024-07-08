@@ -1,14 +1,15 @@
-import { CallOptions, ClientMiddleware, ClientMiddlewareCall } from 'nice-grpc'
+import { CallOptions, ClientMiddleware, ClientMiddlewareCall, TsProtoServiceDefinition } from 'nice-grpc'
 
 import DiiaLogger from '@diia-inhouse/diia-logger'
 import { MetricsService } from '@diia-inhouse/diia-metrics'
 import TestKit, { mockInstance } from '@diia-inhouse/test'
 import { ActionVersion } from '@diia-inhouse/types'
 
-import { GrpcClientFactory, clientCallOptions } from '../../../src/grpc/grpcClient'
+import { GrpcClientFactory, clientCallOptions } from '../../../src/grpc'
 
 const generatorValue = 'generatorResult'
 
+// eslint-disable-next-line n/no-unsupported-features/node-builtins
 const call = <ClientMiddlewareCall<Request, Response>>(<unknown>{
     method: {
         path: '/test/',
@@ -36,35 +37,45 @@ jest.mock('nice-grpc', () => {
         createClientFactory: (): unknown => ({
             use: (loggingMiddleware: ClientMiddleware) => ({
                 use: (metadataMiddleware: ClientMiddleware): object => ({
-                    use: (deadlineMiddleware: ClientMiddleware): object => ({
-                        create: async (): Promise<object> => {
-                            let result = await loggingMiddleware(call, options)
+                    use: (errorHandlerMiddleware: ClientMiddleware): object => ({
+                        use: (deadlineMiddleware: ClientMiddleware): object => ({
+                            create: async (): Promise<object> => {
+                                let result = await loggingMiddleware(call, options)
 
-                            let generatorResult = await result.next()
+                                let generatorResult = await result.next()
 
-                            expect(generatorResult).toStrictEqual({
-                                value: generatorValue,
-                                done: false,
-                            })
+                                expect(generatorResult).toStrictEqual({
+                                    value: generatorValue,
+                                    done: false,
+                                })
 
-                            result = await metadataMiddleware(call, options)
-                            generatorResult = await result.next()
+                                result = await metadataMiddleware(call, options)
+                                generatorResult = await result.next()
 
-                            expect(generatorResult).toStrictEqual({
-                                value: generatorValue,
-                                done: false,
-                            })
+                                expect(generatorResult).toStrictEqual({
+                                    value: generatorValue,
+                                    done: false,
+                                })
 
-                            result = await deadlineMiddleware(call, options)
-                            generatorResult = await result.next()
+                                result = await errorHandlerMiddleware(call, options)
+                                generatorResult = await result.next()
 
-                            expect(generatorResult).toStrictEqual({
-                                value: generatorValue,
-                                done: false,
-                            })
+                                expect(generatorResult).toStrictEqual({
+                                    value: generatorValue,
+                                    done: false,
+                                })
 
-                            return client
-                        },
+                                result = await deadlineMiddleware(call, options)
+                                generatorResult = await result.next()
+
+                                expect(generatorResult).toStrictEqual({
+                                    value: generatorValue,
+                                    done: false,
+                                })
+
+                                return client
+                            },
+                        }),
                     }),
                 }),
             }),
@@ -80,10 +91,10 @@ describe('grpcClientFactory', () => {
     const grpcClientFactory = new GrpcClientFactory(serviceName, logger, metrics)
 
     it('should create client', async () => {
-        const definition = {}
+        const definition: TsProtoServiceDefinition = { name: 'Test', fullName: 'ua.Test', methods: {} }
         const serviceAddress = 'ua.gov.diia.publicservice.service-with-action'
 
-        await expect(grpcClientFactory.createGrpcClient(definition, serviceAddress, 'test')).resolves.toStrictEqual(client)
+        await expect(grpcClientFactory.createGrpcClient(definition, serviceAddress)).resolves.toStrictEqual(client)
     })
 })
 

@@ -1,18 +1,11 @@
-import { AsyncLocalStorage } from 'async_hooks'
+import { asClass, asValue } from 'awilix'
 
-import { AwilixError, asClass, asFunction, asValue } from 'awilix'
-
-import Logger from '@diia-inhouse/diia-logger'
 import { MetricsService } from '@diia-inhouse/diia-metrics'
-import { EnvService } from '@diia-inhouse/env'
-import { HealthCheck } from '@diia-inhouse/healthcheck'
 import { mockClass } from '@diia-inhouse/test'
-import { AlsData, SessionType } from '@diia-inhouse/types'
-import { AppValidator } from '@diia-inhouse/validators'
 
-import { ActionFactory, Application, BaseConfig, BaseDeps, DepsFactoryFn, MoleculerService } from '../../src'
-import { GrpcClientFactory } from '../../src/grpc/grpcClient'
-import { configFactory } from '../mocks'
+import { Application } from '../../src'
+
+import { configFactory } from './config'
 
 jest.mock('@diia-inhouse/redis', () => {
     const { CacheService, PubSubService, RedlockService, StoreService, ...rest } = jest.requireActual('@diia-inhouse/redis')
@@ -69,248 +62,40 @@ jest.mock('awilix', () => {
 
             alreadyCalled = true
 
-            return [
-                { name: 'auth', path: __dirname + '/dist/actions/auth.ts', opts: null },
-                { name: 'user', path: __dirname + '/dist/actions/user.ts', opts: null },
-            ]
+            return []
         },
     }
 })
 
-jest.mock(
-    `${__dirname}/dist/actions/auth.ts`,
-    () => {
-        return {
-            default: class AuthClass {
-                onRegistrationsFinished(): void {}
-
-                getName(): string {
-                    return 'AuthClassName'
-                }
-
-                getSessionType(): SessionType {
-                    return SessionType.User
-                }
-            },
-        }
-    },
-    { virtual: true },
-)
-jest.mock(
-    `${__dirname}/dist/actions/user.ts`,
-    () => {
-        return {
-            default: class UserClass {
-                onInit(): void {}
-
-                getName(): string {
-                    return 'UserClassName'
-                }
-
-                getSessionType(): SessionType {
-                    return SessionType.User
-                }
-            },
-        }
-    },
-    { virtual: true },
-)
-
 describe(`${Application.constructor.name}`, () => {
     const serviceName = 'Auth'
-
-    const AsyncLocalStorageMock = mockClass(AsyncLocalStorage)
-    const asyncLocalStorage = new AsyncLocalStorageMock<AlsData>()
-
-    const MockedLogger = mockClass(Logger)
-    const logger: Logger = new MockedLogger()
+    const MockedMetricsService = mockClass(MetricsService)
 
     describe(`method ${Application.prototype.initialize.name}`, () => {
         it('should successfully start application', async () => {
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
+            const app = new Application(serviceName)
 
-            await expect(app.start()).resolves.not.toThrow()
-        })
+            await app.setConfig(configFactory)
+            await app.setDeps(async () => ({ metrics: asClass(MockedMetricsService).singleton() }))
+            const appOperator = await app.initialize()
 
-        it('should successfully start application without store config', async () => {
-            const cfg = async (envService: EnvService): Promise<BaseConfig> => {
-                const { store, ...rest } = await configFactory(envService, serviceName)
-
-                return rest
-            }
-
-            const app = (await new Application(serviceName).setConfig(cfg))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            await expect(app.start()).resolves.not.toThrow()
-        })
-
-        it('should successfully start application without redis config', async () => {
-            const cfg = async (envService: EnvService): Promise<BaseConfig> => {
-                const { store, ...rest } = await configFactory(envService, serviceName)
-
-                return rest
-            }
-
-            const app = (await new Application(serviceName).setConfig(cfg))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            await expect(app.start()).resolves.not.toThrow()
+            await expect(appOperator.start()).resolves.not.toThrow()
         })
 
         it('should successfully stop application', async () => {
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            await app.stop()
-
-            expect(logger.info).toHaveBeenCalledWith(`[onDestroy] Finished MoleculerService destruction`)
-        })
-
-        it('should log error and stop application on SIGINT', async () => {
-            jest.spyOn(global, 'setImmediate').mockReturnThis()
-
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            await app.start()
-
-            process.emit('SIGINT', 'SIGINT')
-
-            expect(logger.error).toHaveBeenCalledWith('On SIGINT shutdown', { err: 'SIGINT' })
-        })
-
-        it('should shut down on uncaughtException', async () => {
-            jest.spyOn(global, 'setImmediate').mockReturnThis()
-
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            await app.start()
-
-            process.emit('uncaughtException', new AwilixError('Mocked error'))
-
-            expect(logger.error).toHaveBeenCalledWith('On uncaughtException shutdown', { err: new AwilixError('Mocked error') })
-        })
-
-        it('should shut down on unhandledRejection', async () => {
-            jest.spyOn(global, 'setImmediate').mockReturnThis()
-
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .initialize()
-
-            process.emit('unhandledRejection', new AwilixError('Mocked error'), app.start())
-
-            expect(logger.error).toHaveBeenCalledWith('On unhandledRejection shutdown', { err: new AwilixError('Mocked error') })
-        })
-
-        it('should throw error if config is not valid', async () => {
             const app = new Application(serviceName)
 
-            await app.setConfig(async () => false)
+            await app.setConfig(configFactory)
+            await app.setDeps(async () => ({ metrics: asClass(MockedMetricsService).singleton() }))
+            const appOperator = await app.initialize()
 
-            expect(() => {
-                app.initialize()
-            }).toThrow(new Error('Config should be set before using [getBaseDeps]'))
+            await expect(appOperator.stop()).resolves.not.toThrow()
+        })
+
+        it('should throw error if config is not set', async () => {
+            const app = new Application(serviceName)
+
+            await expect(app.initialize()).rejects.toThrow(new Error('Container and config should be initialized before creating context'))
         })
 
         it('should throw error if has no config when do patch', () => {
@@ -325,20 +110,7 @@ describe(`${Application.constructor.name}`, () => {
             const app = new Application(serviceName)
 
             await app.setConfig(configFactory)
-            app.setDeps(
-                (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                    logger: asValue(logger),
-                    actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                    asyncLocalStorage: asValue(asyncLocalStorage),
-                    envService: asClass(mockClass(EnvService)).singleton(),
-                    moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                    validator: asClass(mockClass(AppValidator)).singleton(),
-                    metrics: asClass(mockClass(MetricsService)).singleton(),
-                    serviceName: asValue(serviceName),
-                    config: asValue({}),
-                    grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                }),
-            )
+            await app.setDeps(async () => ({ metrics: asClass(MockedMetricsService).singleton() }))
 
             expect(() => {
                 app.patchConfig({})
@@ -347,87 +119,25 @@ describe(`${Application.constructor.name}`, () => {
     })
 
     describe(`method ${Application.prototype.setDeps.name}`, () => {
-        it('should throw error if config was not set', () => {
+        it('should throw error if config was not set', async () => {
             const app = new Application(serviceName)
 
-            expect(() => {
-                app.setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-            }).toThrow(new Error('Config should be set before deps'))
+            await expect(app.setDeps(async () => ({ metrics: asClass(MockedMetricsService).singleton() }))).rejects.toThrow(
+                new Error('Config should be set before deps'),
+            )
         })
 
         it('should set deps', async () => {
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => <ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>>>(<unknown>{
-                            logger: asValue(logger),
-                            actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                            asyncLocalStorage: asValue(asyncLocalStorage),
-                            envService: asClass(mockClass(EnvService)).singleton(),
-                            moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                            validator: asClass(mockClass(AppValidator)).singleton(),
-                            metrics: asClass(mockClass(MetricsService)).singleton(),
-                            serviceName: asValue(serviceName),
-                            config: asFunction(configFactory),
-                            healthCheck: asClass(mockClass(HealthCheck)).singleton(),
-                        }),
-                )
-                .initialize()
+            const app = new Application(serviceName)
 
-            expect(app.deps.healthCheck).toBeTruthy()
-        })
-    })
+            await app.setConfig(configFactory)
+            await app.setDeps(async () => ({
+                metrics: asClass(MockedMetricsService).singleton(),
+                test: asValue('testValue'),
+            }))
+            const appOperator = await app.initialize()
 
-    describe(`method ${Application.prototype.overrideDeps.name}`, () => {
-        it('should successfully override deps', async () => {
-            expect(() => {
-                const app = new Application(serviceName)
-
-                app.overrideDeps({
-                    logger: asValue(logger),
-                    actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                    asyncLocalStorage: asClass(mockClass(AsyncLocalStorage<AlsData>)).singleton(),
-                    envService: asClass(mockClass(EnvService)).singleton(),
-                    moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                    validator: asClass(mockClass(AppValidator)).singleton(),
-                    serviceName: asValue(serviceName),
-                    config: asFunction(configFactory),
-                })
-            }).not.toThrow(new Error('Config should be set before deps'))
-
-            const app = (await new Application(serviceName).setConfig(configFactory))
-                .setDeps(
-                    (): ReturnType<DepsFactoryFn<BaseConfig, BaseDeps>> => ({
-                        logger: asValue(logger),
-                        actionFactory: asClass(mockClass(ActionFactory)).singleton(),
-                        asyncLocalStorage: asValue(asyncLocalStorage),
-                        envService: asClass(mockClass(EnvService)).singleton(),
-                        moleculer: asClass(mockClass(MoleculerService)).singleton(),
-                        validator: asClass(mockClass(AppValidator)).singleton(),
-                        metrics: asClass(mockClass(MetricsService)).singleton(),
-                        serviceName: asValue(serviceName),
-                        config: asValue({}),
-                        grpcClientFactory: asClass(mockClass(GrpcClientFactory)).singleton(),
-                    }),
-                )
-                .overrideDeps({
-                    healthCheck: asClass(mockClass(HealthCheck)).singleton(),
-                })
-                .initialize()
-
-            expect(app.deps.healthCheck).toBeTruthy()
+            expect(appOperator.container.resolve('test')).toBe('testValue')
         })
     })
 })

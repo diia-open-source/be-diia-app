@@ -1,8 +1,4 @@
-const actionTypesJsonParse = jest.fn()
-
-jest.mock('../../../src/actionJsonConvertor', () => ({ actionTypesJsonParse }))
-
-import { AsyncLocalStorage } from 'async_hooks'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { Service } from 'moleculer'
 
@@ -11,18 +7,17 @@ import { MetricsService } from '@diia-inhouse/diia-metrics'
 import { EnvService } from '@diia-inhouse/env'
 import { mockInstance } from '@diia-inhouse/test'
 import { ActionVersion, AlsData } from '@diia-inhouse/types'
-import { AppValidator } from '@diia-inhouse/validators'
 
-import { ActionFactory, AppApiService, ConfigFactoryFn, MoleculerService } from '../../../src'
-import { appAction, appApiService, configFactory } from '../../mocks'
+import { ActionExecutor, AppApiService, ConfigFactoryFn, MoleculerService } from '../../../src'
+import { appAction, appApiService } from '../../mocks'
+import { configFactory } from '../config'
 
 describe(`${MoleculerService.name}`, () => {
     const serviceName = 'Auth'
     const logger = mockInstance(Logger)
     const envService = new EnvService(logger)
+    const actionExecutor = mockInstance(ActionExecutor)
     const asyncLocalStorage = mockInstance(AsyncLocalStorage<AlsData>)
-    const actionFactory = mockInstance(ActionFactory)
-    const validator = mockInstance(AppValidator)
     const metrics = mockInstance(MetricsService, {
         totalRequestMetric: {
             increment: jest.fn(),
@@ -41,24 +36,22 @@ describe(`${MoleculerService.name}`, () => {
         it('should successfully init moleculer and start service', async () => {
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 appApiService,
             )
 
-            jest.spyOn(actionFactory, 'createActions').mockReturnValue({})
             jest.spyOn(moleculerService.serviceBroker, 'createService').mockReturnValue(<Service>{})
             jest.spyOn(moleculerService.serviceBroker, 'start').mockResolvedValue()
 
             await moleculerService.onInit()
 
-            expect(actionFactory.createActions).toHaveBeenCalledWith([appAction])
             expect(moleculerService.serviceBroker.createService).toHaveBeenCalled()
             expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
         })
@@ -67,12 +60,12 @@ describe(`${MoleculerService.name}`, () => {
             const { balancing, ...configWithoutBalancing } = await configFactory(envService, serviceName)
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 configWithoutBalancing,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 appApiService,
@@ -92,12 +85,12 @@ describe(`${MoleculerService.name}`, () => {
 
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 appApiService,
@@ -114,18 +107,17 @@ describe(`${MoleculerService.name}`, () => {
         it('should successfully destroy moleculer and stop service', async () => {
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
-                { ...cfg, ...{ cors: undefined } },
+                { ...cfg, cors: undefined },
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 <AppApiService>{},
             )
 
-            jest.spyOn(actionFactory, 'createActions').mockReturnValue({})
             jest.spyOn(moleculerService.serviceBroker, 'createService').mockReturnValue(<Service>{})
             jest.spyOn(moleculerService.serviceBroker, 'start').mockResolvedValue()
             jest.spyOn(moleculerService.serviceBroker, 'stop').mockResolvedValue()
@@ -142,19 +134,18 @@ describe(`${MoleculerService.name}`, () => {
             const expectedResult: string[] = []
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 <AppApiService>{},
             )
 
             jest.spyOn(moleculerService.serviceBroker, 'call').mockResolvedValue(expectedResult)
-            actionTypesJsonParse.mockReturnValue(expectedResult)
 
             expect(await moleculerService.act(serviceName, { name: 'auth', actionVersion: ActionVersion.V1 })).toEqual(expectedResult)
             expect(logger.info).toHaveBeenCalled()
@@ -164,12 +155,12 @@ describe(`${MoleculerService.name}`, () => {
             const expectedError = new Error('Unable to execute action')
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
             )
 
@@ -186,19 +177,18 @@ describe(`${MoleculerService.name}`, () => {
             const expectedResult: string[] = []
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
                 {},
                 <AppApiService>{},
             )
 
             jest.spyOn(moleculerService.serviceBroker, 'call').mockResolvedValue(expectedResult)
-            actionTypesJsonParse.mockReturnValue(expectedResult)
 
             expect(await moleculerService.tryToAct(serviceName, { name: 'auth', actionVersion: ActionVersion.V1 })).toEqual(expectedResult)
             expect(logger.info).toHaveBeenCalled()
@@ -208,12 +198,12 @@ describe(`${MoleculerService.name}`, () => {
             const expectedError = new Error('Unable to execute action')
             const moleculerService = new MoleculerService(
                 serviceName,
-                actionFactory,
+                actionExecutor,
                 [appAction],
                 cfg,
                 asyncLocalStorage,
-                validator,
                 logger,
+                envService,
                 metrics,
             )
 

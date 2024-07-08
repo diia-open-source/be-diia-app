@@ -78,7 +78,7 @@ export class GrpcActionError implements AppAction {
     readonly sessionType: SessionType = SessionType.User
 
     async handler(args: GrpcActionErrorArguments): Promise<string> {
-        throw new ApiError('Mocked error', parseInt(args.params.param), {}, args.params.processCode)
+        throw new ApiError('Mocked error', Number.parseInt(args.params.param), {}, args.params.processCode)
     }
 }
 

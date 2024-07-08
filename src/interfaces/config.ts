@@ -1,5 +1,12 @@
-import { MetricsConfig as CustomMetricsConfig } from '@diia-inhouse/diia-metrics'
-import { GenericObject, HttpMethod } from '@diia-inhouse/types'
+import type { AuthConfig, IdentifierConfig } from '@diia-inhouse/crypto'
+import type { AppDbConfig } from '@diia-inhouse/db'
+import type { MetricsConfig as CustomMetricsConfig } from '@diia-inhouse/diia-metrics'
+import type { QueueConnectionConfig } from '@diia-inhouse/diia-queue'
+import type { HealthCheckConfig } from '@diia-inhouse/healthcheck'
+import type { RedisConfig } from '@diia-inhouse/redis'
+import type { GenericObject, HttpMethod } from '@diia-inhouse/types'
+
+import { GrpcServerConfig } from './grpc'
 
 export interface CorsConfig {
     // Configures the Access-Control-Allow-Origin CORS header.
@@ -46,6 +53,8 @@ export interface MetricsConfig {
 }
 
 export interface BaseConfig {
+    listenTerminationSignals?: boolean
+    depsDir?: string
     transporter?: TransporterConfig
     app?: {
         externalBusTimeout?: number
@@ -56,4 +65,12 @@ export interface BaseConfig {
     tracing?: TracingConfig
     metrics?: MetricsConfig
     isMoleculerEnabled?: boolean
+    store?: RedisConfig
+    redis?: RedisConfig
+    rabbit?: QueueConnectionConfig
+    healthCheck?: HealthCheckConfig
+    db?: AppDbConfig
+    auth?: AuthConfig
+    identifier?: IdentifierConfig
+    grpcServer?: GrpcServerConfig
 }

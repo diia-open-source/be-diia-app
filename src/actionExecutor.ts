@@ -1,15 +1,13 @@
-import { AsyncLocalStorage } from 'async_hooks'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
-import { ROOT_CONTEXT, SpanKind, context, propagation, trace } from '@opentelemetry/api'
-import { SemanticAttributes } from '@opentelemetry/semantic-conventions'
-import { merge } from 'lodash'
+import { SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
+import { SEMATTRS_MESSAGE_ID, SEMATTRS_MESSAGE_TYPE, SEMATTRS_MESSAGING_SYSTEM } from '@opentelemetry/semantic-conventions'
 
-import { MetricsService, RequestMechanism, RequestStatus } from '@diia-inhouse/diia-metrics'
+import { MetricsService, RequestStatus } from '@diia-inhouse/diia-metrics'
 import { RedlockService } from '@diia-inhouse/redis'
 import {
     AcquirerSession,
     ActionArguments,
-    ActionSession,
     AlsData,
     LogData,
     Logger,
@@ -20,137 +18,69 @@ import {
     TemporarySession,
     UserSession,
 } from '@diia-inhouse/types'
-import { ActHeaders, GenericObject } from '@diia-inhouse/types/dist/types/common'
-import { convertParamsByRules, utils } from '@diia-inhouse/utils'
-import { AppValidator, ValidationSchema } from '@diia-inhouse/validators'
+import { utils } from '@diia-inhouse/utils'
+import { AppValidator } from '@diia-inhouse/validators'
 
-import { actionTypesToJson } from './actionJsonConvertor'
-import { ActionValidationRules, AppAction } from './interfaces'
+import { ExecuteActionParams } from './interfaces/actionExecutor'
 
-export interface DiiaExecutionContext {
-    action: {
-        name?: string
-        rawName: string
-        service: {
-            name?: string
-        }
-    }
-    meta?: Record<string, unknown>
-    caller: string | null
-    params: GenericObject
-    session?: ActionSession
-    headers?: ActHeaders
-    transport: string
-    spanKind: SpanKind
-    msgSystem: RequestMechanism
-}
-
-export class DiiaActionExecutor {
+export class ActionExecutor {
     constructor(
         private readonly asyncLocalStorage: AsyncLocalStorage<AlsData>,
         private readonly logger: Logger,
         private readonly validator: AppValidator,
         private readonly serviceName: string,
         private readonly metrics: MetricsService,
-        private readonly redlock?: RedlockService,
+        private readonly redlock: RedlockService | null = null,
     ) {}
 
     private readonly actionLockTtl = 30000
 
-    async execute(ctx: DiiaExecutionContext, validationRules: ActionValidationRules, action: AppAction): Promise<unknown> {
-        if (!ctx.action?.name) {
-            return
-        }
+    async execute(params: ExecuteActionParams): Promise<unknown> {
+        const { action, transport, caller, tracingMetadata, spanKind, actionArguments, serviceName = this.serviceName } = params
 
-        const tracingHeaders = ctx.meta?.tracing
-
-        const actionParts = ctx.action.name.split('.')
-        const serviceActionName = `${ctx.action.service?.name}.${ctx.action.rawName}`
-        const activeContext = propagation.extract(ROOT_CONTEXT, tracingHeaders)
-        const tracer = trace.getTracer(ctx.action.service?.name || actionParts[0])
+        const serviceActionName = `${serviceName}.${action.name}`
+        const telemetryActiveContext = propagation.extract(context.active(), tracingMetadata)
+        const tracer = trace.getTracer(serviceName)
         const span = tracer.startSpan(
             `handle ${serviceActionName}`,
             {
-                kind: ctx.spanKind,
+                kind: spanKind,
                 attributes: {
-                    [SemanticAttributes.MESSAGING_SYSTEM]: ctx.msgSystem,
-                    ...(ctx.caller ? { 'messaging.caller': ctx.caller } : {}),
+                    [SEMATTRS_MESSAGING_SYSTEM]: transport,
+                    ...(caller && { 'messaging.caller': caller }),
                 },
             },
-            activeContext,
+            telemetryActiveContext,
         )
 
         const startTime = process.hrtime.bigint()
         const defaultLabels = {
-            mechanism: ctx.msgSystem,
-            ...(ctx.caller && { source: ctx.caller }),
-            destination: this.serviceName,
-            route: serviceActionName,
+            mechanism: transport,
+            ...(caller && { source: caller }),
+            destination: serviceName,
+            route: action.name,
         }
 
-        context.with(trace.setSpan(activeContext, span), () => {
-            try {
-                if (ctx.params.session) {
-                    const sessionRules: ValidationSchema = validationRules.session ? { params: validationRules.session } : {}
+        span.addEvent('message', { [SEMATTRS_MESSAGE_ID]: 1, [SEMATTRS_MESSAGE_TYPE]: 'RECEIVED' })
 
-                    ctx.session = merge(ctx.params.session, convertParamsByRules({ params: ctx.params.session }, sessionRules).params)
-                }
+        return await context.with(trace.setSpan(telemetryActiveContext, span), async () => {
+            const logData = this.buildLogData(actionArguments)
 
-                const paramRules: ValidationSchema = validationRules.params ? { params: validationRules.params } : {}
-
-                ctx.headers = ctx.params.headers
-                if (ctx.transport === 'grpc') {
-                    this.validator.validate(ctx.params, paramRules)
-                }
-
-                ctx.params = merge(ctx.params.params, convertParamsByRules({ params: ctx.params.params }, paramRules).params)
-                if (ctx.headers) {
-                    ctx.headers.serviceCode = action.getServiceCode?.(<ActionArguments>ctx)
-                }
-            } catch (e) {
-                utils.handleError(e, (err) => {
-                    this.metrics.responseTotalTimerMetric.observeSeconds(
-                        {
-                            ...defaultLabels,
-                            status: RequestStatus.Failed,
-                            errorType: err.getType(),
-                            statusCode: err.getCode(),
-                        },
-                        process.hrtime.bigint() - startTime,
-                    )
-                    span.recordException({
-                        name: err.getName(),
-                        code: err.getCode(),
-                        message: err.getMessage(),
-                    })
-
-                    span.end()
-                })
-
-                throw e
+            const alsData: AlsData = {
+                logData: this.logger.prepareContext(logData),
+                session: actionArguments.session,
+                headers: actionArguments.headers,
             }
-        })
 
-        const logData = this.buildLogData(ctx)
-
-        const alsData: AlsData = {
-            logData: this.logger.prepareContext(logData),
-            session: ctx.session,
-            headers: ctx.headers,
-        }
-
-        return await this.asyncLocalStorage?.run(alsData, async () => {
-            return await context.with(trace.setSpan(activeContext, span), async () => {
-                this.logger.io(`ACT IN: ${serviceActionName}`, {
-                    service: actionParts[0],
-                    action: actionParts[1],
-                    version: actionParts[2],
-                    params: ctx.params,
-                    headers: ctx.headers,
-                    transport: ctx.transport ?? 'moleculer',
+            return await this.asyncLocalStorage?.run(alsData, async () => {
+                this.logger.info(`ACT IN: ${serviceActionName}`, {
+                    version: action.actionVersion,
+                    params: actionArguments,
+                    headers: actionArguments.headers,
+                    transport,
                 })
 
-                const actionLockResource = action.getLockResource?.(<ActionArguments>ctx)
+                const actionLockResource = action.getLockResource?.(actionArguments)
                 let lock
 
                 if (actionLockResource && this.redlock) {
@@ -159,24 +89,30 @@ export class DiiaActionExecutor {
                     lock = await this.redlock.lock(lockResource, this.actionLockTtl)
                 }
 
-                let res: unknown
-
                 try {
-                    res = actionTypesToJson(await action.handler(<ActionArguments>ctx))
-                    this.logger.io(`ACT IN RESULT: ${serviceActionName}`, res)
+                    this.validator.validate(actionArguments, { params: { type: 'object', props: action.validationRules } })
 
+                    if (actionArguments.headers) {
+                        actionArguments.headers.serviceCode = action.getServiceCode?.(actionArguments)
+                    }
+
+                    const res = await action.handler(actionArguments)
+
+                    this.logger.info(`ACT IN RESULT: ${serviceActionName}`, res)
                     this.metrics.responseTotalTimerMetric.observeSeconds(
                         { ...defaultLabels, status: RequestStatus.Successful },
                         process.hrtime.bigint() - startTime,
                     )
+                    span.setStatus({ code: SpanStatusCode.OK })
+                    span.addEvent('message', { [SEMATTRS_MESSAGE_ID]: 2, [SEMATTRS_MESSAGE_TYPE]: 'SENT' })
                     span.end()
+
+                    return res
                 } catch (err) {
                     this.logger.error(`ACT IN FAILED: ${serviceActionName}`, {
                         err,
-                        service: actionParts[0],
-                        action: actionParts[1],
-                        version: actionParts[2],
-                        params: ctx.params,
+                        version: action.actionVersion,
+                        params: actionArguments,
                     })
 
                     utils.handleError(err, (apiErr) => {
@@ -195,32 +131,28 @@ export class DiiaActionExecutor {
                             code: apiErr.getCode(),
                             name: apiErr.getName(),
                         })
+                        span.setStatus({ code: SpanStatusCode.ERROR, message: apiErr.getMessage() })
                     })
-
+                    span.addEvent('message', { [SEMATTRS_MESSAGE_ID]: 2, [SEMATTRS_MESSAGE_TYPE]: 'SENT' })
                     span.end()
                     throw err
                 } finally {
                     await lock?.release()
                 }
-
-                return res
             })
         })
     }
 
-    private buildLogData(ctx: DiiaExecutionContext): LogData {
-        const { session, headers } = ctx
-
-        const sessionType = session?.sessionType || SessionType.None
-
+    private buildLogData(actionArguments: ActionArguments): LogData {
+        const session = 'session' in actionArguments ? actionArguments.session : null
+        const sessionType = session?.sessionType ?? SessionType.None
         const logData: LogData = {
             sessionType,
-            ...headers,
+            ...actionArguments.headers,
         }
 
         switch (sessionType) {
             case SessionType.PortalUser:
-            case SessionType.CabinetUser:
             case SessionType.EResidentApplicant:
             case SessionType.EResident:
             case SessionType.User: {
@@ -283,7 +215,7 @@ export class DiiaActionExecutor {
             default: {
                 const unexpectedSessionType: never = sessionType
 
-                throw new Error(`Unexpected sessionType: ${unexpectedSessionType}`)
+                this.logger.warn(`Unexpected session type for the logData: ${unexpectedSessionType}`)
             }
         }
 

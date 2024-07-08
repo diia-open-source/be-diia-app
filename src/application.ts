@@ -1,15 +1,13 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
-import { AsyncLocalStorage } from 'async_hooks'
-import path from 'path'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import path from 'node:path'
 
-import { AwilixContainer, InjectionMode, Lifetime, NameAndRegistrationPair, asClass, asValue, createContainer, listModules } from 'awilix'
+import { AwilixContainer, InjectionMode, NameAndRegistrationPair, asClass, asValue, createContainer, listModules } from 'awilix'
 import { NameFormatter } from 'awilix/lib/load-modules'
 import { camelCase, upperFirst } from 'lodash'
 import { singular } from 'pluralize'
-import { Class } from 'type-fest'
+import type { Class } from 'type-fest'
 
-import { Counter, MetricsService } from '@diia-inhouse/diia-metrics'
-import type { Queue } from '@diia-inhouse/diia-queue'
+import { Counter } from '@diia-inhouse/diia-metrics'
 import { EnvService } from '@diia-inhouse/env'
 import {
     AlsData,
@@ -21,47 +19,43 @@ import {
     OnRegistrationsFinished,
 } from '@diia-inhouse/types'
 import { guards } from '@diia-inhouse/utils'
-import { AppValidator } from '@diia-inhouse/validators'
 
-import ActionFactory from './actionFactory'
+import { getBaseDeps } from './baseDeps'
 import { GrpcService } from './grpc'
-import { GrpcClientFactory } from './grpc/grpcClient'
 import {
+    AppConfigType,
+    AppDepsType,
     ConfigFactoryFn,
-    ConfigType,
     DepsFactoryFn,
     DepsType,
     LoadDepsFromFolderOptions,
     ServiceContext,
     ServiceOperator,
 } from './interfaces/application'
-import { BaseConfig } from './interfaces/config'
 import { BaseDeps } from './interfaces/deps'
 import MoleculerService from './moleculer/moleculerWrapper'
-import PluginDepsCollection from './pluginDepsCollection'
 
 export class Application<TContext extends ServiceContext> {
-    private config?: BaseConfig & ConfigType<TContext>
+    private config?: AppConfigType<TContext>
 
-    private deps?: NameAndRegistrationPair<BaseDeps & DepsType<TContext>>
+    private container?: AwilixContainer<DepsType<TContext>>
 
-    private container: AwilixContainer<BaseDeps & DepsType<TContext>>
+    private baseContainer: AwilixContainer<BaseDeps<AppConfigType<TContext>>>
 
     private groupedDepsNames: Record<string, string[]> = {}
 
-    private groupedPluginDepsNames: Record<string, string[]> = {}
-
     private syncCommunicationClasses = [MoleculerService, GrpcService]
 
-    private asyncCommunicationClasses: Class<OnInit>[] = []
+    private asyncCommunicationClasses: Class<unknown>[] = []
 
     constructor(
         private readonly serviceName: string,
         loggerPkg = '@diia-inhouse/diia-logger',
     ) {
-        this.container = createContainer<BaseDeps & DepsType<TContext>>({ injectionMode: InjectionMode.CLASSIC, strict: true }).register({
+        this.baseContainer = createContainer<BaseDeps<AppConfigType<TContext>>>({ injectionMode: InjectionMode.CLASSIC }).register({
             serviceName: asValue(this.serviceName),
             envService: asClass(EnvService).singleton(),
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             logger: asClass(<LoggerConstructor>require(loggerPkg).default, {
                 injector: () => ({ options: { logLevel: process.env.LOG_LEVEL } }),
             }).singleton(),
@@ -69,8 +63,8 @@ export class Application<TContext extends ServiceContext> {
         })
     }
 
-    async setConfig(factory: ConfigFactoryFn<ConfigType<TContext>>): Promise<this> {
-        const envService = this.container.resolve<EnvService>('envService')
+    async setConfig(factory: ConfigFactoryFn<AppConfigType<TContext>>): Promise<this> {
+        const envService = this.baseContainer.resolve('envService')
 
         await envService.init()
         this.config = await factory(envService, this.serviceName)
@@ -78,7 +72,7 @@ export class Application<TContext extends ServiceContext> {
         return this
     }
 
-    patchConfig(config: Partial<BaseConfig & ConfigType<TContext>>): void {
+    patchConfig(config: Partial<AppConfigType<TContext>>): void {
         if (!this.config) {
             throw new Error('Config should be set before patch')
         }
@@ -86,27 +80,36 @@ export class Application<TContext extends ServiceContext> {
         Object.assign(this.config, config)
     }
 
-    setDeps(factory: DepsFactoryFn<BaseConfig & ConfigType<TContext>, DepsType<TContext>>): this {
+    getConfig(): AppConfigType<TContext> {
+        if (!this.config) {
+            throw new Error('Config should be set before getting')
+        }
+
+        return this.config
+    }
+
+    async setDeps(factory: DepsFactoryFn<AppConfigType<TContext>, AppDepsType<TContext>>): Promise<this> {
         if (!this.config) {
             throw new Error('Config should be set before deps')
         }
 
-        this.deps = factory(this.config)
+        const baseDeps = await this.getBaseDeps()
+
+        this.baseContainer.register(baseDeps)
+
+        const appDeps = await factory(this.config, this.baseContainer)
+
+        this.container = this.baseContainer
+            .createScope<AppDepsType<TContext>>()
+            .register(<NameAndRegistrationPair<DepsType<TContext>>>appDeps)
 
         return this
     }
 
-    initialize(): ServiceOperator<ConfigType<TContext>, DepsType<TContext>> {
+    async initialize(): Promise<ServiceOperator<AppConfigType<TContext>, DepsType<TContext>>> {
         this.setOnShutDownHook()
 
-        const baseDeps = this.getBaseDeps()
-        const mergedDeps = <NameAndRegistrationPair<BaseDeps & DepsType<TContext>>>{
-            ...baseDeps,
-            ...this.deps,
-        }
-
-        this.container.register(mergedDeps)
-        this.loadDefaultDepsFolders()
+        await this.loadDefaultDepsFolders()
 
         const ctx = this.createContext()
 
@@ -117,18 +120,12 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
-    overrideDeps(overriddenDeps: NameAndRegistrationPair<BaseDeps & DepsType<TContext>>): this {
-        this.deps = { ...this.deps, ...overriddenDeps }
-
-        return this
-    }
-
     defaultNameFormatter(folderName: string): NameFormatter {
         return (_, descriptor) => {
             const parsedPath = path.parse(descriptor.path)
             const fileName = parsedPath.name
             const dependencyPath = parsedPath.dir
-                .split(`dist/${folderName}`)[1]
+                .split(`${this.getDepsDir()}${path.sep}${folderName}`)[1]
                 .split(path.sep)
                 .map((p) => upperFirst(p))
 
@@ -142,164 +139,65 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
-    loadDepsFromFolder(options: LoadDepsFromFolderOptions): this {
-        const {
-            folderName,
-            fileMask = '**/*.js',
-            nameFormatter = this.defaultNameFormatter(folderName),
-            resolverOptions = { lifetime: Lifetime.SINGLETON },
-            pluginGroupName,
-            groupName,
-        } = options
+    async loadDepsFromFolder(options: LoadDepsFromFolderOptions): Promise<this> {
+        const { folderName, fileMask = '**/*.js', nameFormatter = this.defaultNameFormatter(folderName), groupName } = options
 
-        const directory = `dist/${folderName}/${fileMask}`
+        const directory = `${this.getDepsDir()}/${folderName}/${fileMask}`
         const modules = listModules(directory)
 
-        if (pluginGroupName) {
-            if (!Object.keys(this.container.registrations).includes(pluginGroupName)) {
-                this.container.register(pluginGroupName, asClass(PluginDepsCollection).singleton())
-            }
-
-            this.groupedPluginDepsNames[pluginGroupName] = this.groupedPluginDepsNames[pluginGroupName] || []
-        }
-
         if (groupName) {
-            if (!Object.keys(this.container.registrations).includes(groupName)) {
-                this.container.register(groupName, asValue([]))
+            if (!Object.keys(this.baseContainer.registrations).includes(groupName)) {
+                this.baseContainer.register(groupName, asValue([]))
             }
 
             this.groupedDepsNames[groupName] = this.groupedDepsNames[groupName] || []
         }
 
-        modules.forEach((module) => {
+        for (const module of modules) {
             const { name, path: modulePath } = module
             const registrationName = nameFormatter(name, { ...module, value: '' })
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const dependency = require(path.resolve(modulePath)).default
+            const dependency = await import(path.resolve(modulePath))
+            const defaultExport = dependency.default?.default ?? dependency.default
 
-            if (dependency) {
-                this.container.register(registrationName, asClass(dependency, resolverOptions))
+            if (typeof defaultExport === 'function') {
+                this.baseContainer.register(
+                    registrationName,
+                    asClass(defaultExport, {
+                        injector: (c) => {
+                            const logger = c.resolve<Logger>('logger')
+                            const childLogger = logger.child?.({ regName: registrationName })
 
-                if (pluginGroupName) {
-                    this.groupedPluginDepsNames[pluginGroupName].push(registrationName)
-                }
+                            return { logger: childLogger ?? logger }
+                        },
+                    }).singleton(),
+                )
 
                 if (groupName) {
                     this.groupedDepsNames[groupName].push(registrationName)
                 }
             }
-        })
+        }
 
         return this
     }
 
-    private getBaseDeps(): NameAndRegistrationPair<BaseDeps> {
-        const { config } = this
-        if (!config && typeof config !== 'object') {
+    private getDepsDir(): string {
+        return path.resolve(this.config?.depsDir ?? 'dist')
+    }
+
+    private async getBaseDeps(): Promise<NameAndRegistrationPair<BaseDeps<AppConfigType<TContext>>>> {
+        const { config, asyncCommunicationClasses } = this
+        if (!config) {
             throw new Error('Config should be set before using [getBaseDeps]')
         }
 
-        const { isMoleculerEnabled } = config
+        if (config.rabbit) {
+            const { ExternalCommunicator, ExternalEventBus, ScheduledTask, EventBus, Task } = await import('@diia-inhouse/diia-queue')
 
-        let redisDeps = {}
-        if (config.store || config.redis) {
-            const { CacheService, PubSubService, RedlockService, StoreService } = require('@diia-inhouse/redis')
-
-            redisDeps = {
-                ...(config.store && {
-                    store: asClass(StoreService, { injector: () => ({ storeConfig: config.store }) }).singleton(),
-                    redlock: asClass(RedlockService, { injector: () => ({ storeConfig: config.store }) }).singleton(),
-                }),
-                ...(config.redis && {
-                    cache: asClass(CacheService, { injector: () => ({ redisConfig: config.redis }) }).singleton(),
-                    pubsub: asClass(PubSubService, { injector: () => ({ redisConfig: config.redis }) }).singleton(),
-                }),
-            }
+            asyncCommunicationClasses.push(ExternalCommunicator, ExternalEventBus, ScheduledTask, EventBus, Task)
         }
 
-        let queueDeps = {}
-        if ('rabbit' in config) {
-            const {
-                ExternalCommunicator,
-                ExternalCommunicatorChannel,
-                ExternalEventBus,
-                ScheduledTask,
-                Queue,
-                EventMessageHandler,
-                EventMessageValidator,
-                EventBus,
-                Task,
-                QueueConnectionType,
-            } = require('@diia-inhouse/diia-queue')
-
-            this.asyncCommunicationClasses.push(ExternalCommunicator, ExternalEventBus, ScheduledTask, EventBus, Task)
-
-            const baseQueueDeps = {
-                queue: asClass(Queue, { injector: () => ({ connectionConfig: config.rabbit }) }).singleton(),
-                eventMessageHandler: asClass(EventMessageHandler).singleton(),
-                eventMessageValidator: asClass(EventMessageValidator).singleton(),
-                externalChannel: asClass(ExternalCommunicatorChannel).singleton(),
-            }
-
-            const { [QueueConnectionType.Internal]: internalQueueConfig, [QueueConnectionType.External]: externalQueueConfig } =
-                config.rabbit
-
-            const externalQueueDeps = externalQueueConfig
-                ? {
-                      externalEventBus: asClass(ExternalEventBus, {
-                          injector: (c) => ({ queueProvider: c.resolve<Queue>('queue').getExternalQueue() }),
-                      }).singleton(),
-                      external: asClass(ExternalCommunicator).singleton(),
-                  }
-                : {}
-
-            const internalQueueDeps = internalQueueConfig
-                ? {
-                      task: asClass(Task, {
-                          injector: (c) => ({ queueProvider: c.resolve<Queue>('queue').getInternalQueue() }),
-                      }).singleton(),
-
-                      ...(internalQueueConfig.scheduledTaskQueueName && {
-                          scheduledTask: asClass(ScheduledTask, {
-                              injector: (c) => ({
-                                  queueProvider: c.resolve<Queue>('queue').getInternalQueue(),
-                                  queueName: internalQueueConfig.scheduledTaskQueueName,
-                              }),
-                          }).singleton(),
-                      }),
-
-                      ...(internalQueueConfig.queueName && {
-                          eventBus: asClass(EventBus, {
-                              injector: (c) => ({
-                                  queueProvider: c.resolve<Queue>('queue').getInternalQueue(),
-                                  queueName: internalQueueConfig.queueName,
-                              }),
-                          }).singleton(),
-                      }),
-                  }
-                : {}
-
-            queueDeps = {
-                ...baseQueueDeps,
-                ...internalQueueDeps,
-                ...externalQueueDeps,
-            }
-        }
-
-        return {
-            config: asValue(config),
-            validator: asClass(AppValidator).singleton(),
-            moleculer: isMoleculerEnabled ? asClass(MoleculerService).singleton() : asValue(undefined),
-            actionFactory: asClass(ActionFactory, {
-                injector: (c) => ({ redlock: c.hasRegistration('redlock') ? c.resolve('redlock') : null }),
-            }).singleton(),
-            metrics: asClass(MetricsService, {
-                injector: () => ({ metricsConfig: config.metrics?.custom || {}, isMoleculerEnabled }),
-            }).singleton(),
-            grpcClientFactory: asClass(GrpcClientFactory).singleton(),
-            ...redisDeps,
-            ...queueDeps,
-        }
+        return await getBaseDeps(config)
     }
 
     private async start(): Promise<void> {
@@ -307,102 +205,124 @@ export class Application<TContext extends ServiceContext> {
     }
 
     private async stop(): Promise<void> {
-        const registeredInstances = Object.keys(this.container.registrations)
-        const logger = this.container.resolve<Logger>('logger')
-        const onDestroyInstances: OnDestroy[] = []
-        const onBeforeAppShutdownInstances: OnBeforeApplicationShutdown[] = []
+        if (!this.container) {
+            throw new Error('Container should be initialized before stopping')
+        }
 
-        registeredInstances.forEach((name) => {
+        const registeredInstances = Object.keys(this.container.registrations)
+        const logger = this.container.resolve('logger')
+        const destroyOrder: OnDestroy[][] = []
+        const onBeforeAppShutdownInstances: OnBeforeApplicationShutdown[] = []
+        for (const name of registeredInstances) {
             const instance = this.container.resolve(name)
             if (guards.hasOnDestroyHook(instance)) {
-                onDestroyInstances.push(instance)
+                const order = this.getOnDestroyOrder(instance)
+
+                destroyOrder[order] ??= []
+                destroyOrder[order].push(instance)
             }
 
             if (guards.hasOnBeforeApplicationShutdownHook(instance)) {
                 onBeforeAppShutdownInstances.push(instance)
             }
-        })
-        const onDestroyTasks = onDestroyInstances.map(async (instance) => {
-            await instance.onDestroy()
-            logger.info(`[onDestroy] Finished ${instance.constructor.name} destruction`)
-        })
-        const onDestroyErrors = await this.runHookTasks(onDestroyTasks)
+        }
+
+        const onDestroyErrors: Error[] = []
+        for (const [order, instancesWithOnDestroyHook = []] of destroyOrder.entries()) {
+            const onDestroyTasks = instancesWithOnDestroyHook.map(async (instance) => {
+                try {
+                    await instance.onDestroy()
+                    logger.info(`[onDestroy:${order}] Finished ${instance.constructor.name} destruction`)
+                } catch (err) {
+                    logger.error(`[onDestroy:${order}] Failed ${instance.constructor.name} destruction`, { err })
+                    throw err
+                }
+            })
+            const errors = await this.runHookTasks(onDestroyTasks)
+
+            onDestroyErrors.push(...errors)
+        }
 
         const onBeforeAppShutdownTasks = onBeforeAppShutdownInstances.map(async (instance) => {
-            await instance.onBeforeApplicationShutdown()
-            logger.info(`[onBeforeAppShutdown] Finished ${instance.constructor.name} destruction`)
+            try {
+                await instance.onBeforeApplicationShutdown()
+                logger.info(`[onBeforeAppShutdown] Finished ${instance.constructor.name} destruction`)
+            } catch (err) {
+                logger.error(`[onBeforeAppShutdown] Failed ${instance.constructor.name} destruction`, { err })
+                throw err
+            }
         })
+
         const onBeforeAppShutdownErrors = await this.runHookTasks(onBeforeAppShutdownTasks)
-        if (onDestroyErrors.length || onBeforeAppShutdownErrors.length) {
-            throw new AggregateError(onDestroyErrors.concat(onBeforeAppShutdownErrors))
+        if (onDestroyErrors.length > 0 || onBeforeAppShutdownErrors.length > 0) {
+            throw new AggregateError(onDestroyErrors.concat(onBeforeAppShutdownErrors), 'Failed to stop service')
         }
     }
 
     private async runHookTasks(tasks: Promise<void>[]): Promise<Error[]> {
-        return (await Promise.allSettled(tasks)).filter(guards.isSettledError).map((err) => new Error(err.reason))
+        const results = await Promise.allSettled(tasks)
+
+        return results.filter(guards.isSettledError).map((err) => new Error(err.reason))
     }
 
-    private loadDefaultDepsFolders(): void {
-        this.loadDepsFromFolder({
+    private async loadDefaultDepsFolders(): Promise<void> {
+        await this.loadDepsFromFolder({
             folderName: 'actions',
             groupName: 'actionList',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'tasks',
             groupName: 'taskList',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'scheduledTasks',
             groupName: 'scheduledTaskList',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'eventListeners',
             groupName: 'eventListenerList',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'externalEventListeners',
             groupName: 'externalEventListenerList',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'services',
         })
 
-        this.loadDepsFromFolder({
+        await this.loadDepsFromFolder({
             folderName: 'dataMappers',
             nameFormatter: (name): string => name,
         })
     }
 
-    private resolvePluginDepsCollections(): void {
-        Object.entries(this.groupedPluginDepsNames).map(([aggregateName, moduleNames]) => {
-            const pluginDepsCollection = this.container.resolve(aggregateName)
-
-            pluginDepsCollection.addItems(moduleNames.map((moduleName) => this.container.resolve(moduleName)))
-        })
-    }
-
     private async resolveDeps(): Promise<void> {
-        this.resolvePluginDepsCollections()
-        Object.entries(this.groupedDepsNames).map(([aggregateName, moduleNames]) => {
-            const group = this.container.resolve(aggregateName)
+        if (!this.container) {
+            throw new Error('Container should be initialized before deps resolving')
+        }
 
-            moduleNames.forEach((moduleName) => group.push(this.container.resolve(moduleName)))
-        })
+        for (const [aggregateName, moduleNames] of Object.entries(this.groupedDepsNames)) {
+            const group = this.container.resolve<string[]>(aggregateName)
+
+            for (const moduleName of moduleNames) {
+                group.push(this.container.resolve(moduleName))
+            }
+        }
 
         const registeredObjects = Object.keys(this.container.registrations)
-        const logger = this.container.resolve<Logger>('logger')
+        const logger = this.container.resolve('logger')
         const initOrder: [OnInit[], OnInit[], OnInit[], OnInit[]] = [[], [], [], []]
         const registrationsFinishedHooks: OnRegistrationsFinished[] = []
 
-        registeredObjects.map((name) => {
+        for (const name of registeredObjects) {
             const instance = this.container.resolve(name)
             if (guards.hasOnInitHook(instance)) {
-                const order = this.getOrder(instance)
+                const order = this.getOnInitOrder(instance)
 
                 initOrder[order].push(instance)
             }
@@ -410,7 +330,7 @@ export class Application<TContext extends ServiceContext> {
             if (guards.hasOnRegistrationsFinishedHook(instance)) {
                 registrationsFinishedHooks.push(instance)
             }
-        })
+        }
 
         await Promise.all(
             registrationsFinishedHooks.map(async (instance) => {
@@ -430,7 +350,7 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
-    private getOrder(instance: OnInit): 0 | 1 | 2 | 3 {
+    private getOnInitOrder(instance: object): 0 | 1 | 2 | 3 {
         if (instance.constructor.name === EnvService.name) {
             return 0
         }
@@ -446,17 +366,30 @@ export class Application<TContext extends ServiceContext> {
         return 1
     }
 
-    private createContext(): ServiceContext<BaseConfig & ConfigType<TContext>, BaseDeps & DepsType<TContext>> {
+    private getOnDestroyOrder(instance: OnDestroy): number {
+        const onInitOrder = this.getOnInitOrder(instance)
+
+        return Math.abs(onInitOrder - 3)
+    }
+
+    private createContext(): ServiceContext<AppConfigType<TContext>, DepsType<TContext>> {
+        if (!this.container || !this.config) {
+            throw new Error('Container and config should be initialized before creating context')
+        }
+
         return {
-            config: this.config!,
-            deps: this.container && this.container.cradle,
+            config: this.config,
             container: this.container,
         }
     }
 
     private setOnShutDownHook(): void {
-        process.on('SIGINT', (err) => this.onShutDown('On SIGINT shutdown', err))
-        process.on('SIGQUIT', (err) => this.onShutDown('On SIGQUIT shutdown', err))
+        const listenTerminationSignals = this.config?.listenTerminationSignals ?? true
+        if (listenTerminationSignals) {
+            process.on('SIGINT', (err) => this.onShutDown('On SIGINT shutdown', err))
+            process.on('SIGQUIT', (err) => this.onShutDown('On SIGQUIT shutdown', err))
+            process.on('SIGTERM', (err) => this.onShutDown('On SIGTERM shutdown', err))
+        }
 
         const UncaughtExceptionMetric = new Counter('uncaught_exceptions_total')
 
@@ -475,19 +408,19 @@ export class Application<TContext extends ServiceContext> {
 
     private async onShutDown(msg: string, error: unknown): Promise<void> {
         if (error) {
-            this.container.resolve<Logger>('logger').error(msg, { err: error })
+            this.baseContainer?.resolve('logger').error(msg, { err: error })
         } else {
-            this.container.resolve<Logger>('logger').warn(msg)
+            this.baseContainer?.resolve('logger').warn(msg)
         }
 
         try {
             await this.stop()
         } catch (err) {
-            this.container.resolve<Logger>('logger').error('Failed to stop service', { err })
+            this.baseContainer?.resolve('logger').error('Failed to stop service. Shutdown completed', { err })
         }
 
-        // eslint-disable-next-line no-process-exit
-        setImmediate(() => process.exit(1))
+        // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+        setImmediate(() => process.exit(error ? 1 : 0))
     }
 }
 

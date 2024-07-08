@@ -1,5 +1,5 @@
 {
-    "extends": "@diia-inhouse/configs/tsconfig",
+    "extends": "@diia-inhouse/configs/tsconfig/tsconfig.esm",
     "compilerOptions": {
         "outDir": "dist",
         "declaration": true,

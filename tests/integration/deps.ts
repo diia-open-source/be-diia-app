@@ -1,28 +1,24 @@
 import { asClass, asFunction } from 'awilix'
 
-import { CryptoDeps, HashService, IdentifierService } from '@diia-inhouse/crypto'
-import TestKit from '@diia-inhouse/test'
+import { HashService } from '@diia-inhouse/crypto'
 
-import { DepsFactoryFn, DepsResolver, GrpcClientFactory } from '../../src'
-import { TestDefinition } from '../../src/generated'
+import { DepsFactoryFn, GrpcClientFactory } from '../../src'
 
+import { TestDefinition, TestPrivateDefinition } from './generated/test-service'
 import { AppConfig } from './interfaces/config'
 import { AppDeps } from './interfaces/deps'
 
-export default (config: AppConfig): ReturnType<DepsFactoryFn<AppConfig, AppDeps>> => {
-    const { identifier, grpc } = config
-    const cryptoDeps: DepsResolver<CryptoDeps> = {
-        identifier: asClass(IdentifierService, { injector: () => ({ identifierConfig: identifier }) }).singleton(),
-        hash: asClass(HashService).singleton(),
-    }
+export default async (config: AppConfig): ReturnType<DepsFactoryFn<AppConfig, AppDeps>> => {
+    const { grpc } = config
 
-    return <ReturnType<DepsFactoryFn<AppConfig, AppDeps>>>(<unknown>{
-        testKit: asClass(TestKit).singleton(),
-
+    return {
         testServiceClient: asFunction((grpcClientFactory: GrpcClientFactory) =>
-            grpcClientFactory.createGrpcClient(TestDefinition, grpc.testServiceAddress, 'Test'),
+            grpcClientFactory.createGrpcClient(TestDefinition, grpc.testServiceAddress),
+        ).singleton(),
+        testPrivateServiceClient: asFunction((grpcClientFactory: GrpcClientFactory) =>
+            grpcClientFactory.createGrpcClient(TestPrivateDefinition, grpc.testServiceAddress),
         ).singleton(),
 
-        ...cryptoDeps,
-    })
+        hash: asClass(HashService).singleton(),
+    }
 }

@@ -1,9 +1,17 @@
-import { AsyncLocalStorage } from 'async_hooks'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
-import { SpanKind, context, propagation, trace } from '@opentelemetry/api'
-import { SemanticAttributes } from '@opentelemetry/semantic-conventions'
-import { ChannelCredentials, Client, ClientMiddlewareCall, Metadata, createChannel, createClientFactory } from 'nice-grpc'
-import { CompatServiceDefinition } from 'nice-grpc/lib/service-definitions'
+import { SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
+import { SEMATTRS_MESSAGING_DESTINATION, SEMATTRS_MESSAGING_SYSTEM, SEMATTRS_RPC_SYSTEM } from '@opentelemetry/semantic-conventions'
+import {
+    ChannelCredentials,
+    ChannelOptions,
+    Client,
+    ClientMiddlewareCall,
+    Metadata,
+    TsProtoServiceDefinition,
+    createChannel,
+    createClientFactory,
+} from 'nice-grpc'
 import { deadlineMiddleware } from 'nice-grpc-client-middleware-deadline'
 import protobuf from 'protobufjs'
 
@@ -12,7 +20,7 @@ import { QueueContext } from '@diia-inhouse/diia-queue'
 import { LogData, Logger } from '@diia-inhouse/types'
 import { utils } from '@diia-inhouse/utils'
 
-import { CallOptions, GrpcClientMetadata } from '../interfaces'
+import { CallOptions } from '../interfaces/grpc'
 
 import wrappers from './wrappers'
 
@@ -27,16 +35,17 @@ export class GrpcClientFactory {
         Object.assign(protobuf.wrappers, wrappers)
     }
 
-    createGrpcClient<Service extends CompatServiceDefinition>(
+    createGrpcClient<Service extends TsProtoServiceDefinition>(
         definition: Service,
         serviceAddress: string,
-        serviceName: string,
+        channelOptions: ChannelOptions = {},
     ): Client<Service> {
-        const channelImplementation = createChannel(serviceAddress, ChannelCredentials.createInsecure())
+        const channelImplementation = createChannel(serviceAddress, ChannelCredentials.createInsecure(), channelOptions)
 
         return createClientFactory()
             .use(this.loggingMiddleware.bind(this))
-            .use(this.metadataMiddleware.bind(this)(serviceName))
+            .use(this.metadataMiddleware.bind(this)(definition.name))
+            .use(this.errorHandlerMiddleware.bind(this))
             .use(deadlineMiddleware)
             .create(definition, channelImplementation)
     }
@@ -47,7 +56,7 @@ export class GrpcClientFactory {
         call: ClientMiddlewareCall<Request, Response>,
         options: CallOptions,
     ) => AsyncGenerator<Awaited<Response>, void | Awaited<Response>, undefined> {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        // eslint-disable-next-line @typescript-eslint/no-this-alias, unicorn/no-this-assignment
         const self = this
 
         return async function* <Request, Response>(
@@ -66,12 +75,12 @@ export class GrpcClientFactory {
 
             const logData = self.asyncLocalStorage?.getStore()?.logData ?? {}
 
-            const meta = options.metadata
+            const meta = options.metadata || new Metadata()
 
             for (const key in logData) {
                 const value = logData[<keyof LogData>key]
-                if (value && !meta?.has(key)) {
-                    meta?.set(key, value)
+                if (key !== 'actionVersion' && value && !meta.has(key)) {
+                    meta.set(key, value)
                 }
             }
 
@@ -81,16 +90,43 @@ export class GrpcClientFactory {
                 {
                     kind: SpanKind.CLIENT,
                     attributes: {
-                        [SemanticAttributes.MESSAGING_SYSTEM]: RequestMechanism.Grpc,
-                        [SemanticAttributes.MESSAGING_DESTINATION]: destinationServiceName,
+                        [SEMATTRS_MESSAGING_SYSTEM]: RequestMechanism.Grpc,
+                        [SEMATTRS_MESSAGING_DESTINATION]: destinationServiceName,
+                        [SEMATTRS_RPC_SYSTEM]: RequestMechanism.Grpc,
                     },
                 },
                 context.active(),
             )
-            const tracing = {}
+            const tracing = <{ traceparent?: string; tracestate?: string }>{}
 
             propagation.inject(trace.setSpan(context.active(), span), tracing)
-            meta?.set('tracing', JSON.stringify(tracing))
+            meta.set('tracing', JSON.stringify(tracing))
+
+            if (tracing.traceparent) {
+                meta.set('traceparent', tracing.traceparent)
+            }
+
+            if (tracing.tracestate) {
+                meta.set('tracestate', tracing.tracestate)
+            }
+
+            for (const kv of meta) {
+                const [key, value] = kv
+
+                if (ArrayBuffer.isView(value)) {
+                    continue
+                }
+
+                try {
+                    if ((<string[]>value).length > 1) {
+                        span.setAttribute(`rpc.grpc.request.metadata.${key}`, <string[]>value)
+                    } else if ((<string[]>value).length === 1) {
+                        span.setAttribute(`rpc.grpc.request.metadata.${key}`, <string>(<string[]>value)[0])
+                    }
+                } catch {
+                    // ignore result
+                }
+            }
 
             options.metadata = meta
 
@@ -101,10 +137,11 @@ export class GrpcClientFactory {
                     { ...defaultLabels, status: RequestStatus.Successful },
                     process.hrtime.bigint() - startTime,
                 )
+                span.setStatus({ code: SpanStatusCode.OK })
 
                 return grpcResult
             } catch (err) {
-                await utils.handleError(err, (apiError) => {
+                utils.handleError(err, (apiError) => {
                     self.metrics.totalTimerMetric.observeSeconds(
                         {
                             ...defaultLabels,
@@ -114,6 +151,13 @@ export class GrpcClientFactory {
                         },
                         process.hrtime.bigint() - startTime,
                     )
+
+                    span.recordException({
+                        message: apiError.getMessage(),
+                        code: apiError.getCode(),
+                        name: apiError.getName(),
+                    })
+                    span.setStatus({ code: SpanStatusCode.ERROR, message: apiError.getMessage() })
                 })
 
                 throw err
@@ -127,41 +171,56 @@ export class GrpcClientFactory {
         call: ClientMiddlewareCall<Request, Response>,
         options: CallOptions,
     ): AsyncGenerator<Awaited<Response>, void | Awaited<Response>, undefined> {
-        const { path } = call.method
+        const {
+            request,
+            method: { path },
+        } = call
 
-        this.logger.io(`ACT OUT: ${path}`, { transport: 'grpc' })
+        this.logger.info(`ACT OUT: ${path}`, { transport: 'grpc', params: request })
 
         try {
-            const grpcResult: void | Awaited<Response> = yield* call.next(call.request, options)
+            const grpcResult = yield* call.next(request, options)
 
-            this.logger.io(`ACT OUT RESULT: ${path}`, grpcResult)
+            this.logger.info(`ACT OUT RESULT: ${path}`, grpcResult)
 
             return grpcResult
-        } catch (e) {
-            await utils.handleError(e, (apiError) => {
+        } catch (err) {
+            utils.handleError(err, (apiError) => {
                 this.logger.error(`ACT OUT FAILED: ${path}`, { err: apiError })
             })
 
-            throw e
+            throw err
         }
     }
-}
 
-export function clientCallOptions(grpcMetadata: GrpcClientMetadata): CallOptions {
-    const metadata = new Metadata()
+    private async *errorHandlerMiddleware<Request, Response>(
+        call: ClientMiddlewareCall<Request, Response>,
+        options: CallOptions,
+    ): AsyncGenerator<Awaited<Response>, void | Awaited<Response>, undefined> {
+        const { request } = call
 
-    const { session, version, deadline } = grpcMetadata
+        let trailer: Metadata | undefined
+        try {
+            const grpcResult = yield* call.next(request, {
+                ...options,
+                onTrailer(receivedTrailer) {
+                    trailer = receivedTrailer
 
-    if (session) {
-        metadata.set('session', Buffer.from(JSON.stringify(session)).toString('base64'))
-    }
+                    options.onTrailer?.(trailer)
+                },
+            })
 
-    if (version) {
-        metadata.set('actionversion', version)
-    }
+            return grpcResult
+        } catch (err) {
+            utils.handleError(err, (apiError) => {
+                const processCodeRaw = trailer?.get('processcode')
+                const processCode = processCodeRaw ? Number.parseInt(processCodeRaw, 10) : undefined
+                if (processCode) {
+                    apiError.setProcessCode(processCode)
+                }
 
-    return {
-        metadata,
-        deadline,
+                throw apiError
+            })
+        }
     }
 }

@@ -1,11 +1,12 @@
+// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import ts from 'typescript'
 
 import { ACTION_RESPONSE } from '../pluginConstants'
 
 import parser from './parser'
 
-export default class ActionVisitor {
-    static visit(sourceFile: ts.SourceFile, ctx: ts.TransformationContext, program: ts.Program): ReturnType<typeof ts.visitNode> {
+const ActionVisitor = {
+    visit(sourceFile: ts.SourceFile, ctx: ts.TransformationContext, program: ts.Program): ReturnType<typeof ts.visitNode> {
         const typeChecker = program.getTypeChecker()
 
         const visitClassNode = (node: ts.Node): ts.Node => {
@@ -41,9 +42,9 @@ export default class ActionVisitor {
         }
 
         return ts.visitNode(sourceFile, visitClassNode)
-    }
+    },
 
-    static addResponseFactory(
+    addResponseFactory(
         factory: ts.NodeFactory,
         node: ts.ClassDeclaration,
         handlerResponse: ts.ObjectLiteralExpression,
@@ -60,5 +61,7 @@ export default class ActionVisitor {
             ...node.members,
             property,
         ])
-    }
+    },
 }
+
+export default ActionVisitor

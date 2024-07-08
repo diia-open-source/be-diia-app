@@ -1,34 +1,22 @@
-import { AsyncLocalStorage } from 'async_hooks'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
-    GrpcObject,
     Metadata,
     MethodDefinition,
-    ProtobufTypeDefinition,
-    Server,
-    ServerCredentials,
     ServerErrorResponse,
     ServerUnaryCall,
-    ServiceClientConstructor,
+    ServerWritableStream,
     ServiceDefinition,
     UntypedHandleCall,
     UntypedServiceImplementation,
-    loadPackageDefinition,
 } from '@grpc/grpc-js'
-import { load } from '@grpc/proto-loader'
 import { SpanKind } from '@opentelemetry/api'
-import { glob } from 'glob'
-import { uniq } from 'lodash'
 import protobuf from 'protobufjs'
 
-import { MetricsService, RequestMechanism } from '@diia-inhouse/diia-metrics'
-import { EnvService } from '@diia-inhouse/env'
+import { RequestMechanism } from '@diia-inhouse/diia-metrics'
 import { ApiError, HttpError } from '@diia-inhouse/errors'
-import { RedlockService } from '@diia-inhouse/redis'
 import {
     ActionVersion,
-    AlsData,
     GrpcStatusCode,
     HealthCheckResult,
     HttpStatusCode,
@@ -36,41 +24,47 @@ import {
     OnHealthCheck,
     OnInit,
     PlatformType,
-    PublicServiceCode,
 } from '@diia-inhouse/types'
 import { ActHeaders, GenericObject } from '@diia-inhouse/types/dist/types/common'
 import { OnDestroy } from '@diia-inhouse/types/dist/types/interfaces/onDestroy'
 import { ActionSession } from '@diia-inhouse/types/dist/types/session/session'
 import { utils } from '@diia-inhouse/utils'
-import { AppValidator } from '@diia-inhouse/validators'
 
-import { DiiaActionExecutor } from '../actionExecutor'
-import ActionFactory from '../actionFactory'
-import { AppAction, GrpcAppAction, GrpcServiceStatus } from '../interfaces'
+import { ActionExecutor } from '../actionExecutor'
+import {
+    AppAction,
+    BaseConfig,
+    ErrorCode,
+    GrpcAppAction,
+    GrpcMethodType,
+    GrpcServerStreamAction,
+    GrpcServiceStatus,
+    MetaTracing,
+} from '../interfaces'
 
+import { GrpcServer } from './server'
 import wrappers from './wrappers'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     constructor(
-        private readonly envService: EnvService,
+        private readonly config: BaseConfig,
         private readonly actionList: AppAction[],
         private readonly logger: Logger,
-        validator: AppValidator,
-        asyncLocalStorage: AsyncLocalStorage<AlsData>,
-        serviceName: string,
-        metrics: MetricsService,
-        redlock?: RedlockService,
+        private readonly actionExecutor: ActionExecutor,
     ) {
-        this.actionExecutor = new DiiaActionExecutor(asyncLocalStorage, logger, validator, serviceName, metrics, redlock)
+        if (!this.config.grpcServer?.isEnabled) {
+            this.logger.info('grpc server disabled')
+
+            return
+        }
 
         Object.assign(protobuf.wrappers, wrappers)
+        this.grpcServer = new GrpcServer(this.config.grpcServer, this.logger)
     }
 
-    private readonly actionExecutor: DiiaActionExecutor
+    private readonly grpcServer: GrpcServer | undefined
 
-    private readonly server = new Server()
-
-    private status: GrpcServiceStatus['grpcServer'] = 'UNKNOWN'
+    private readonly streamConnections: Map<string, ServerWritableStream<GenericObject, unknown>> = new Map()
 
     private readonly httpCodeToGrpcCode: Record<number, GrpcStatusCode> = {
         [HttpStatusCode.PROCESSING]: GrpcStatusCode.OK,
@@ -95,75 +89,33 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     }
 
     async onHealthCheck(): Promise<HealthCheckResult<GrpcServiceStatus>> {
+        if (!this.grpcServer) {
+            return { status: HttpStatusCode.OK, details: { grpcServer: 'DISABLED' } }
+        }
+
+        const status = this.grpcServer.getStatus()
+
         return {
-            status: this.status === 'SERVING' ? HttpStatusCode.OK : HttpStatusCode.SERVICE_UNAVAILABLE,
-            details: { grpcServer: this.status },
+            status: status === 'SERVING' ? HttpStatusCode.OK : HttpStatusCode.SERVICE_UNAVAILABLE,
+            details: { grpcServer: status },
         }
     }
 
     async onInit(): Promise<void> {
-        if (!this.envService.getVar('GRPC_SERVER_ENABLED', 'boolean', false)) {
-            this.logger.info('grpc server disabled')
-
+        if (!this.grpcServer) {
             return
         }
 
-        const externalProtos = await glob('node_modules/@diia-inhouse/**/proto/**/*.proto')
-        const externalProtosPaths = uniq(externalProtos.map((value) => value.substring(0, value.lastIndexOf('/'))))
-        const myProtosDir = 'proto'
-        const services = this.envService.getVar<string[]>('GRPC_SERVICES', 'object')
-        const myProtos = (await glob(`${myProtosDir}/**/*.proto`)).map((protoPath) =>
-            protoPath.slice(protoPath.indexOf(`${myProtosDir}/`) + `${myProtosDir}/`.length),
-        )
-        const pkgDefs = await load(myProtos, {
-            keepCase: true,
-            longs: String,
-            enums: String,
-            defaults: true,
-            oneofs: true,
-            includeDirs: [...externalProtosPaths, myProtosDir],
-        })
-
-        const serviceProto = loadPackageDefinition(pkgDefs)
-
-        services.forEach((service) => {
-            const subpath = service.split('.')
-            let serviceDefinition: GrpcObject | ServiceClientConstructor | ProtobufTypeDefinition | undefined
-            for (const p of subpath) {
-                serviceDefinition = serviceDefinition ? (<GrpcObject>serviceDefinition)[p] : serviceProto[p]
-            }
-
-            if (!this.isServiceDefinition(serviceDefinition)) {
-                throw new Error(`Unable to find service definition for ${service}`)
-            }
-
-            this.server.addService(
-                serviceDefinition.service,
-                this.provideGrpcServiceImplementation(serviceDefinition.serviceName, serviceDefinition.service),
-            )
-        })
-
-        const grpcPort = this.envService.getVar('GRPC_SERVER_PORT', 'number', 5000)
-
-        this.server.bindAsync(`0.0.0.0:${grpcPort}`, ServerCredentials.createInsecure(), (error, port) => {
-            if (error) {
-                this.logger.error(`grpc service failed to start on port ${port}`)
-
-                throw new Error(`Unable to start grpc service ${error}`)
-            }
-
-            this.server.start()
-            this.status = 'SERVING'
-            this.logger.info(`grpc service is listening on port ${port}`)
-        })
+        await this.grpcServer.start(this.provideGrpcServiceImplementation.bind(this))
     }
 
-    onDestroy(): Promise<void> {
-        this.status = 'NOT_SERVING'
+    async onDestroy(): Promise<void> {
+        for (const connection of Array.from(this.streamConnections.values())) {
+            connection.end()
+        }
 
-        return new Promise((resolve, reject) => {
-            this.server.tryShutdown((err) => (err ? reject(err) : resolve()))
-        })
+        this.streamConnections.clear()
+        await this.grpcServer?.stop()
     }
 
     private provideGrpcServiceImplementation(serviceName: string, service: ServiceDefinition): UntypedServiceImplementation {
@@ -178,14 +130,136 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                     throw new Error('Original name in method object is undefined')
                 }
 
-                serviceImplementation[grpcMethod] = this.provideGrpcMethodImplementation(
-                    serviceName,
-                    this.provideAppActions(originalName, method),
-                )
+                switch (this.getMethodType(method)) {
+                    case GrpcMethodType.UNARY: {
+                        serviceImplementation[grpcMethod] = this.provideGrpcMethodImplementation(
+                            serviceName,
+                            this.provideAppActions(originalName, method),
+                        )
+                        break
+                    }
+                    case GrpcMethodType.SERVER_STREAM: {
+                        serviceImplementation[grpcMethod] = this.provideStreamGrpcMethodImplementation(
+                            serviceName,
+                            this.provideAppActions(originalName, method),
+                        )
+                        break
+                    }
+                    case GrpcMethodType.BIDI_STREAM: {
+                        serviceImplementation[grpcMethod] = this.provideStreamGrpcMethodImplementation(
+                            serviceName,
+                            this.provideAppActions(originalName, method),
+                        )
+                        break
+                    }
+                    case GrpcMethodType.CLIENT_STREAM: {
+                        throw new Error('Client streaming not supported')
+                    }
+                }
             }
         }
 
         return serviceImplementation
+    }
+
+    private getMethodType(method: MethodDefinition<unknown, unknown>): GrpcMethodType {
+        if (!method.requestStream && !method.responseStream) {
+            return GrpcMethodType.UNARY
+        } else if (!method.requestStream && method.responseStream) {
+            return GrpcMethodType.SERVER_STREAM
+        } else if (method.requestStream && !method.responseStream) {
+            return GrpcMethodType.CLIENT_STREAM
+        } else {
+            return GrpcMethodType.BIDI_STREAM
+        }
+    }
+
+    private provideStreamGrpcMethodImplementation(serviceName: string, actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
+        return async (input: ServerWritableStream<GenericObject, unknown>) => {
+            const { metadata, request } = input
+            const streamId = randomUUID()
+
+            metadata.set('stream-id', streamId)
+
+            const actHeaders = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
+            const actionInstance = <GrpcServerStreamAction>this.getActionInstance(actHeaders.actionVersion, actions)
+            const mobileUid = actHeaders.mobileUid
+
+            this.streamConnections.set(streamId, input)
+            if ('subscribeChannel' in actionInstance && mobileUid) {
+                const handler = async (data: GenericObject): Promise<void> => {
+                    this.logger.info('Publishing to channel ' + mobileUid, data)
+                    input.write(data)
+                }
+
+                const streamKey = { mobileUid, streamId }
+
+                try {
+                    actionInstance.subscribeChannel(streamKey, handler)
+                } catch (err) {
+                    utils.handleError(err, (error) => {
+                        if (error.getCode() === ErrorCode.SubscriptionsExists) {
+                            const subscriptions = <string[]>error.getData().subscriptions ?? []
+
+                            this.logger.info(`Closing existing connections by mobileUid ${mobileUid}`, { subscriptions })
+                            for (const existingStreamId of subscriptions) {
+                                const connection = this.streamConnections.get(existingStreamId)
+                                if (connection) {
+                                    actionInstance.unsubscribeChannel({ streamId: existingStreamId, mobileUid })
+                                    connection.end()
+                                }
+                            }
+
+                            actionInstance.subscribeChannel(streamKey, handler)
+
+                            return
+                        }
+
+                        this.logger.error('Failed to reopen connection for the mobileUid ' + mobileUid)
+                        input.end()
+                    })
+                }
+            }
+
+            if ('onConnectionOpened' in actionInstance) {
+                try {
+                    actionInstance.onConnectionOpened(actHeaders, request)
+                } catch (err) {
+                    utils.handleError(err, (error) => this.logger.error('Failed to open action connection', { err: error }))
+                    input.end()
+                }
+            }
+
+            input.addListener('end', () => {
+                input.end()
+            })
+            input.prependListener('close', () => {
+                if ('unsubscribeChannel' in actionInstance && mobileUid) {
+                    actionInstance.unsubscribeChannel({ mobileUid, streamId })
+                }
+
+                if ('onConnectionClosed' in actionInstance) {
+                    try {
+                        actionInstance.onConnectionClosed(actHeaders, request)
+                    } catch (err) {
+                        utils.handleError(err, (error) => this.logger.error('Failed to close action connection gracefully', { err: error }))
+                    }
+                }
+
+                this.streamConnections.delete(streamId)
+            })
+            input.addListener('data', async (data: GenericObject) => {
+                const response = await this.executeAction(actionInstance, metadata, actHeaders, data, serviceName)
+
+                if (response) {
+                    input.write(response)
+                }
+            })
+
+            if (request) {
+                input.emit('data', request)
+            }
+        }
     }
 
     private provideGrpcMethodImplementation(serviceName: string, actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
@@ -194,62 +268,75 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             callback: (err: ServerErrorResponse | null, resp: unknown) => void,
         ) => {
             try {
-                const params = input.request
+                const { metadata, request: params } = input
+                const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
+                const actionInstance = this.getActionInstance(headers.actionVersion, actions)
 
-                const headers = this.prepareActHeadersFromGrpcInput(input, Array.from(actions.keys()))
+                const response = await this.executeAction(actionInstance, metadata, headers, params, serviceName)
 
-                const actionInstance = actions.get(headers.actionVersion)
-
-                if (!actionInstance) {
-                    throw new HttpError('action not found for version ' + headers.actionVersion, HttpStatusCode.NOT_IMPLEMENTED)
+                if (callback) {
+                    callback(null, response)
                 }
+            } catch (err) {
+                this.logger.error('Error while executing grpc method', { err })
 
-                const actionArguments = {
-                    session: this.prepareActSessionFromGrpcInput(input),
-                    headers,
-                    params,
-                }
-
-                let tracing: unknown
-                if (headers.tracing) {
-                    tracing = JSON.parse(headers.tracing)
-                }
-
-                const response = await this.actionExecutor.execute(
-                    {
-                        caller: null,
-                        action: {
-                            service: {
-                                name: serviceName,
-                            },
-                            name: actionInstance.name,
-                            rawName: actionInstance.name,
-                        },
-                        meta: {
-                            tracing: tracing,
-                        },
-                        params: actionArguments,
-                        transport: 'grpc',
-                        spanKind: SpanKind.SERVER,
-                        msgSystem: RequestMechanism.Grpc,
-                    },
-                    ActionFactory.getActionValidationRules(actionInstance),
-                    actionInstance,
-                )
-
-                callback(null, response)
-            } catch (error) {
-                utils.handleError(error, (apiError) => {
+                utils.handleError(err, (apiError) => {
                     callback(this.mapApiErrorToRpcError(apiError), null)
                 })
             }
         }
     }
 
+    private getActionInstance(actionVersion: ActionVersion, actions: Map<ActionVersion, GrpcAppAction>): GrpcAppAction {
+        const actionInstance = actions.get(actionVersion)
+
+        if (!actionInstance) {
+            throw new HttpError('action not found for version ' + actionVersion, HttpStatusCode.NOT_IMPLEMENTED)
+        }
+
+        return actionInstance
+    }
+
+    private async executeAction(
+        action: GrpcAppAction,
+        metadata: Metadata,
+        headers: ActHeaders,
+        params: GenericObject,
+        serviceName: string,
+    ): Promise<unknown> {
+        const actionArguments = {
+            session: this.prepareActSessionFromGrpcInput(metadata),
+            headers,
+            params,
+        }
+
+        let tracing: MetaTracing | undefined
+        if (headers.tracing) {
+            tracing = JSON.parse(headers.tracing)
+        }
+
+        if (!headers.traceparent) {
+            headers.traceparent = tracing?.traceparent
+        }
+
+        if (!headers.tracestate) {
+            headers.tracestate = tracing?.tracestate
+        }
+
+        return await this.actionExecutor.execute({
+            action,
+            tracingMetadata: headers,
+            actionArguments,
+            transport: RequestMechanism.Grpc,
+            spanKind: SpanKind.SERVER,
+            serviceName,
+        })
+    }
+
     private provideAppActions(actionName: string, grpcMethod: MethodDefinition<unknown, unknown>): Map<ActionVersion, GrpcAppAction> {
         const actions = new Map<ActionVersion, GrpcAppAction>()
         const actionInstances = this.actionList.filter((action): action is GrpcAppAction => action.name === actionName)
-        if (!actionInstances.length) {
+        if (actionInstances.length === 0) {
             throw new Error(`Unable to find any action for ${actionName}`)
         }
 
@@ -263,10 +350,8 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         return actions
     }
 
-    private prepareActHeadersFromGrpcInput(grpcInput: ServerUnaryCall<unknown, unknown>, actVersions: ActionVersion[]): ActHeaders {
+    private prepareActHeadersFromGrpcInput(metadata: Metadata, actVersions: ActionVersion[]): ActHeaders {
         const headers: ActHeaders = { actionVersion: this.getDefaultActionVersion(actVersions), traceId: randomUUID() }
-
-        const { metadata } = grpcInput
 
         if (this.hasMetadataProperty(metadata, 'actionversion')) {
             headers.actionVersion = <ActionVersion>metadata.get('actionversion')[0]
@@ -297,19 +382,25 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         }
 
         if (this.hasMetadataProperty(metadata, 'serviceсode')) {
-            headers.serviceCode = <PublicServiceCode>metadata.get('serviceсode')[0]
+            headers.serviceCode = <string>metadata.get('serviceсode')[0]
         }
 
         if (this.hasMetadataProperty(metadata, 'tracing')) {
             headers.tracing = <string>metadata.get('tracing')[0]
         }
 
+        if (this.hasMetadataProperty(metadata, 'traceparent')) {
+            headers.traceparent = <string>metadata.get('traceparent')[0]
+        }
+
+        if (this.hasMetadataProperty(metadata, 'tracestate')) {
+            headers.tracestate = <string>metadata.get('tracestate')[0]
+        }
+
         return headers
     }
 
-    private prepareActSessionFromGrpcInput(grpcInput: ServerUnaryCall<unknown, unknown>): ActionSession | undefined {
-        const { metadata } = grpcInput
-
+    private prepareActSessionFromGrpcInput(metadata: Metadata): ActionSession | undefined {
         if (this.hasMetadataProperty(metadata, 'session')) {
             return JSON.parse(Buffer.from(<string>metadata.get('session')[0], 'base64').toString())
         }
@@ -344,15 +435,5 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         const rpcError = { ...new ApiError(apiError.getMessage(), rpcErrorCode, errorData), metadata, code: rpcErrorCode }
 
         return rpcError
-    }
-
-    private isServiceDefinition(
-        param: GrpcObject | ServiceClientConstructor | ProtobufTypeDefinition | undefined,
-    ): param is ServiceClientConstructor {
-        if (param && 'service' in param) {
-            return true
-        }
-
-        return false
     }
 }

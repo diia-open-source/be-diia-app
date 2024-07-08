@@ -490,4 +490,4 @@ ASALocalRun/
 
 dist/
 
-src/generated/
+tests/integration/generated/

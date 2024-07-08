@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import ts from 'typescript'
 
 class TypeParser {
@@ -143,13 +144,12 @@ class TypeParser {
                     return ts.factory.createStringLiteral(prop.getName())
                 }
             })
+            // eslint-disable-next-line unicorn/prefer-native-coercion-functions
             .filter((prop): prop is ts.StringLiteral => Boolean(prop))
 
         nestedPropertyAssignments.push(
             ts.factory.createPropertyAssignment('required', ts.factory.createArrayLiteralExpression(requiredValues)),
-        )
-        nestedPropertyAssignments.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')))
-        nestedPropertyAssignments.push(
+            ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')),
             ts.factory.createPropertyAssignment('properties', ts.factory.createObjectLiteralExpression(propertiesAssignments)),
         )
 
@@ -161,8 +161,8 @@ class TypeParser {
         if (type.flags & ts.TypeFlags.Literal) {
             // eslint-disable-next-line no-prototype-builtins
             if (!type.hasOwnProperty('value') && type.hasOwnProperty('intrinsicName')) {
-                props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')))
                 props.push(
+                    ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
                     ts.factory.createPropertyAssignment(
                         'enum',
                         ts.factory.createArrayLiteralExpression([
@@ -174,8 +174,8 @@ class TypeParser {
                 return ts.factory.createObjectLiteralExpression(props)
             }
 
-            props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')))
             props.push(
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
                 ts.factory.createPropertyAssignment(
                     'enum',
                     ts.factory.createArrayLiteralExpression([this.createLiteral((<any>type).value)]),
@@ -203,8 +203,10 @@ class TypeParser {
 
         const props: ts.PropertyAssignment[] = []
 
-        props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')))
-        props.push(ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)))
+        props.push(
+            ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
+            ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
+        )
 
         return ts.factory.createObjectLiteralExpression(props)
     }
@@ -213,8 +215,10 @@ class TypeParser {
         const props: ts.PropertyAssignment[] = []
 
         if (type.typeArguments) {
-            props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('array')))
-            props.push(ts.factory.createPropertyAssignment('items', this.parseType(type.typeArguments[0])))
+            props.push(
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('array')),
+                ts.factory.createPropertyAssignment('items', this.parseType(type.typeArguments[0])),
+            )
         } else {
             props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('array')))
         }
@@ -236,14 +240,16 @@ class TypeParser {
 
         const tupleElements: ts.PropertyAssignment[] = []
 
-        Object.entries(type.typeArguments).forEach(([index, elementType]) => {
+        for (const [index, elementType] of Object.entries(type.typeArguments)) {
             tupleElements.push(ts.factory.createPropertyAssignment(index, this.parseType(elementType)))
-        })
+        }
 
-        props.push(ts.factory.createPropertyAssignment('properties', ts.factory.createObjectLiteralExpression(tupleElements)))
-        props.push(ts.factory.createPropertyAssignment('description', ts.factory.createStringLiteral(tupleDescription)))
-        props.push(ts.factory.createPropertyAssignment('minItems', ts.factory.createNumericLiteral(elements)))
-        props.push(ts.factory.createPropertyAssignment('maxItems', ts.factory.createNumericLiteral(elements)))
+        props.push(
+            ts.factory.createPropertyAssignment('properties', ts.factory.createObjectLiteralExpression(tupleElements)),
+            ts.factory.createPropertyAssignment('description', ts.factory.createStringLiteral(tupleDescription)),
+            ts.factory.createPropertyAssignment('minItems', ts.factory.createNumericLiteral(elements)),
+            ts.factory.createPropertyAssignment('maxItems', ts.factory.createNumericLiteral(elements)),
+        )
 
         return ts.factory.createObjectLiteralExpression(props)
     }
@@ -263,11 +269,7 @@ class TypeParser {
                 }
             }
 
-            if (this.checker.typeToString(unionProperty) !== 'undefined') {
-                return true
-            } else {
-                return false
-            }
+            return this.checker.typeToString(unionProperty) === 'undefined' ? false : true
         })
 
         if (types.length === 1) {
@@ -281,8 +283,8 @@ class TypeParser {
             return this.parseType(unionProperty)
         }
 
-        let literals: boolean = types.length ? true : false
-        let primitives: boolean = types.length ? true : false
+        let literals: boolean = types.length > 0 ? true : false
+        let primitives: boolean = types.length > 0 ? true : false
         for (const unionProperty of types) {
             if (!(unionProperty.flags & ts.TypeFlags.Literal)) {
                 literals = false
@@ -312,8 +314,10 @@ class TypeParser {
 
             const props: ts.PropertyAssignment[] = []
 
-            props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')))
-            props.push(ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)))
+            props.push(
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
+                ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
+            )
 
             return ts.factory.createObjectLiteralExpression(props)
         } else if (primitives) {
@@ -362,15 +366,15 @@ class TypeParser {
         const unique: string[] = []
         const requiredValues: ts.StringLiteral[] = []
 
-        types.reverse().forEach((t) => {
-            t.properties.forEach((property) => {
+        for (const t of types.reverse()) {
+            for (const property of t.properties) {
                 if (property.name) {
                     const identifier = <ts.Identifier>property.name
                     if (['properties', 'additionalProperties'].includes(identifier.escapedText.toString())) {
                         const assignment = <ts.PropertyAssignment>property
                         const props = <ts.ObjectLiteralExpressionBase<ts.PropertyAssignment>>assignment.initializer
 
-                        props.properties.forEach((prop) => {
+                        for (const prop of props.properties) {
                             const id: ts.Identifier = <ts.Identifier>prop.name
 
                             // if (!prop.questionToken) {
@@ -385,20 +389,21 @@ class TypeParser {
                                     additionalProperties.push(prop)
                                 }
                             }
-                        })
+                        }
                     }
                 }
-            })
-        })
+            }
+        }
 
         const propertyAssignments: ts.PropertyAssignment[] = []
 
-        propertyAssignments.push(ts.factory.createPropertyAssignment('required', ts.factory.createArrayLiteralExpression(requiredValues)))
-        propertyAssignments.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')))
         propertyAssignments.push(
+            ts.factory.createPropertyAssignment('required', ts.factory.createArrayLiteralExpression(requiredValues)),
+            ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')),
             ts.factory.createPropertyAssignment('properties', ts.factory.createObjectLiteralExpression(combinedProperties)),
         )
-        if (additionalProperties.length) {
+
+        if (additionalProperties.length > 0) {
             propertyAssignments.push(
                 ts.factory.createPropertyAssignment('additionalProperties', ts.factory.createObjectLiteralExpression(additionalProperties)),
             )
@@ -439,11 +444,11 @@ class TypeParser {
         const sourcePathParts = sourceFile?.fileName.split('/') || []
         const packageNameIndexes: number[] = []
 
-        sourcePathParts.forEach((part, index) => {
+        for (const [index, part] of sourcePathParts.entries()) {
             if (part === 'node_modules') {
                 packageNameIndexes.push(index + 1)
             }
-        })
+        }
 
         for (const packageIndex of packageNameIndexes) {
             const externalPackageName = sourcePathParts[packageIndex]
@@ -513,7 +518,7 @@ class TypeParser {
 
     private addMetadataToProperty(property: ts.Symbol, parsed: ts.ObjectLiteralExpression): ts.ObjectLiteralExpression {
         const description: ts.SymbolDisplayPart[] = property.getDocumentationComment(this.checker)
-        if (description.length) {
+        if (description.length > 0) {
             const descriptionProperty: ts.PropertyAssignment = this.createPropertyFromMetadata('description', description[0])
 
             parsed = this.addProperties(parsed, [descriptionProperty])
@@ -523,10 +528,9 @@ class TypeParser {
 
         const properties = docTags
             .filter((tag) => tag.text)
-            .map(({ name, text }) => text?.map((t) => this.createPropertyFromMetadata(name, t)) || [])
-            .flatMap((t) => t)
+            .flatMap(({ name, text }) => text?.map((t) => this.createPropertyFromMetadata(name, t)) || [])
 
-        if (docTags.length && parsed.properties) {
+        if (docTags.length > 0 && parsed.properties) {
             parsed = this.addProperties(parsed, properties)
         }
 
@@ -541,7 +545,9 @@ class TypeParser {
             return object
         }
 
-        object.properties.forEach((property) => combinedProperties.push(property))
+        for (const property of object.properties) {
+            combinedProperties.push(property)
+        }
 
         return ts.factory.createObjectLiteralExpression(combinedProperties)
     }

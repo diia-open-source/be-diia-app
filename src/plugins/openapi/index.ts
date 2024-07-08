@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as dotenv from 'dotenv-flow'
+// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import * as ts from 'typescript'
 
 import { Env } from '@diia-inhouse/env'
@@ -23,6 +24,10 @@ function before(program: ts.Program): ts.Transformer<any> {
     }
 }
 
+function transformer() {
+    return (sf: ts.SourceFile): ts.SourceFile => sf
+}
+
 export default function (program: ts.Program): ts.Transformer<any> {
-    return process.env.NODE_ENV !== Env.Prod ? before(program) : () => (sf: ts.SourceFile) => sf
+    return process.env.NODE_ENV === Env.Prod ? transformer : before(program)
 }

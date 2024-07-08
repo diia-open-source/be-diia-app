@@ -1,9 +1,5 @@
 import { Loggers } from 'moleculer'
 
-const kleur = { enabled: true }
-
-jest.mock('kleur', () => kleur)
-
 import Logger from '@diia-inhouse/diia-logger'
 import { mockInstance } from '@diia-inhouse/test'
 
@@ -33,16 +29,6 @@ describe(`${MoleculerLogger.constructor.name}`, () => {
             logHandler('trace', ['trace message', {}])
 
             expect(logger.trace).toHaveBeenCalledWith('trace message', { data: {} })
-        })
-    })
-
-    describe(`method ${moleculerLogger.resetColors.name}`, () => {
-        it('should successfully reset colors', () => {
-            kleur.enabled = true
-
-            moleculerLogger.resetColors()
-
-            expect(kleur.enabled).toBeFalsy()
         })
     })
 })

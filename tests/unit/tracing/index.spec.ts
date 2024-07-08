@@ -1,4 +1,4 @@
-import { IncomingMessage } from 'http'
+import { IncomingMessage } from 'node:http'
 
 import { DiagConsoleLogger, DiagLogLevel, diag } from '@opentelemetry/api'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
@@ -13,6 +13,7 @@ jest.mock('@opentelemetry/resources', () => {
 
     return {
         ...rest,
+        // eslint-disable-next-line unicorn/no-static-only-class
         Resource: class ResourceMock {
             static default(): { merge: () => void } {
                 return {
@@ -45,7 +46,7 @@ describe(`initTracing`, () => {
 
         const { instances: providerInstances } = (<jest.MockedClass<typeof NodeTracerProvider>>NodeTracerProvider).mock
 
-        expect(providerInstances).toHaveLength(0)
+        expect(providerInstances).toHaveLength(1)
     })
 
     it('should register node tracer provider', () => {
