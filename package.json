@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "18.0.0",
+    "version": "18.1.0",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
     "types": "dist/types/index.d.ts",
@@ -69,6 +69,7 @@
         "@diia-inhouse/diia-queue": ">=6.3.2",
         "@diia-inhouse/env": ">=1.10.2",
         "@diia-inhouse/errors": ">=1.7.0",
+        "@diia-inhouse/features": ">=2.1.0",
         "@diia-inhouse/healthcheck": ">=1.7.0",
         "@diia-inhouse/redis": ">=2.2.1",
         "@diia-inhouse/types": ">=6.30.0",
@@ -93,6 +94,9 @@
         },
         "@diia-inhouse/crypto": {
             "optional": true
+        },
+        "@diia-inhouse/features": {
+            "optional": true
         }
     },
     "devDependencies": {
@@ -106,6 +110,7 @@
         "@diia-inhouse/errors": "1.10.0",
         "@diia-inhouse/eslint-config": "5.1.0",
         "@diia-inhouse/eslint-plugin": "1.6.0",
+        "@diia-inhouse/features": "2.1.0",
         "@diia-inhouse/genproto": "1.14.0",
         "@diia-inhouse/healthcheck": "1.12.0",
         "@diia-inhouse/redis": "2.12.0",

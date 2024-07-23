@@ -15,6 +15,7 @@ import type {
     Task,
 } from '@diia-inhouse/diia-queue'
 import type { EnvService } from '@diia-inhouse/env'
+import type { FeatureService } from '@diia-inhouse/features'
 import type { HealthCheck } from '@diia-inhouse/healthcheck'
 import type { CacheService, PubSubService, RedlockService, StoreService } from '@diia-inhouse/redis'
 import type { AlsData, Logger } from '@diia-inhouse/types'
@@ -56,4 +57,5 @@ export interface BaseDeps<TConfig extends BaseConfig = BaseConfig> {
     database?: DatabaseService
     auth?: AuthService
     identifier?: IdentifierService
+    featureFlag?: FeatureService
 }

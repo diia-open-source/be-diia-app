@@ -13,7 +13,7 @@ import MoleculerService from './moleculer/moleculerWrapper'
 export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
     config: TConfig,
 ): Promise<NameAndRegistrationPair<BaseDeps<TConfig>>> {
-    const { isMoleculerEnabled, healthCheck: healthCheckConfig, store, redis, rabbit, db, auth, identifier, metrics } = config
+    const { isMoleculerEnabled, healthCheck: healthCheckConfig, store, redis, rabbit, db, auth, identifier, metrics, featureFlags } = config
     const baseDeps: NameAndRegistrationPair<BaseDeps<TConfig>> = {
         config: asValue(config),
         validator: asClass(AppValidator).singleton(),
@@ -121,6 +121,14 @@ export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
 
         baseDeps.identifier = asClass(IdentifierService, {
             injector: () => ({ identifierConfig: identifier }),
+        }).singleton()
+    }
+
+    if (featureFlags) {
+        const { FeatureService } = await import('@diia-inhouse/features')
+
+        baseDeps.featureFlag = asClass(FeatureService, {
+            injector: () => ({ featureConfig: featureFlags }),
         }).singleton()
     }
 
