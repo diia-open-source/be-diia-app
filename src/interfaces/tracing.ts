@@ -7,3 +7,5 @@ export interface OpentelemetryTracingConfig {
     exporter?: OTLPGRPCExporterConfigNode
     debug?: boolean
 }
+
+export const SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES = 'messaging.rabbitmq.attributes'

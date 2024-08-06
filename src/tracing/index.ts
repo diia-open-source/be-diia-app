@@ -10,7 +10,7 @@ import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 import { merge } from 'lodash'
 
-import { OpentelemetryTracingConfig } from '../interfaces/tracing'
+import { OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing'
 
 export function getIgnoreIncomingRequestHook(paths: string[] = []): IgnoreIncomingRequestFunction {
     const ignoreIncomingPaths = new Set(['/metrics', '/ready', '/start', '/live'].concat(paths))
@@ -49,6 +49,10 @@ const defaultConfig: OpentelemetryTracingConfig = {
                 }
             },
             consumeHook: (span: Span, consumeInfo: ConsumeInfo) => {
+                for (const [key, value] of Object.entries(consumeInfo.msg.properties)) {
+                    span.setAttribute(`${SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES}.${key}`, value)
+                }
+
                 if (consumeInfo.msg.fields.exchange.includes('reply-to') || consumeInfo.msg.fields.routingKey.includes('reply-to')) {
                     span.updateName('amq.rabbitmq.reply-to')
                     span.setAttributes({
