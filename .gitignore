@@ -491,3 +491,5 @@ ASALocalRun/
 dist/
 
 tests/integration/generated/
+
+.serena

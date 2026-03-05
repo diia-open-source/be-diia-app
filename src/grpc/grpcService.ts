@@ -10,20 +10,24 @@ import {
     UntypedHandleCall,
     UntypedServiceImplementation,
 } from '@grpc/grpc-js'
-import { SpanKind } from '@opentelemetry/api'
+import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
 import protobuf from 'protobufjs'
 
 import { RequestMechanism } from '@diia-inhouse/diia-metrics'
 import { ApiError, HttpError } from '@diia-inhouse/errors'
+import type { HealthCheck } from '@diia-inhouse/healthcheck'
 import {
     ActionVersion,
     GrpcStatusCode,
     HealthCheckResult,
     HttpStatusCode,
     Logger,
+    MimeType,
     OnHealthCheck,
     OnInit,
     PlatformType,
+    SessionType,
+    grpcMetadataKeys,
 } from '@diia-inhouse/types'
 import { ActHeaders, GenericObject } from '@diia-inhouse/types/dist/types/common'
 import { OnDestroy } from '@diia-inhouse/types/dist/types/interfaces/onDestroy'
@@ -41,27 +45,11 @@ import {
     GrpcServiceStatus,
     MetaTracing,
 } from '../interfaces'
-
+import { OnInitResults } from '../interfaces/onInitResults'
 import { GrpcServer } from './server'
 import wrappers from './wrappers'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
-    constructor(
-        private readonly config: BaseConfig,
-        private readonly actionList: AppAction[],
-        private readonly logger: Logger,
-        private readonly actionExecutor: ActionExecutor,
-    ) {
-        if (!this.config.grpcServer?.isEnabled) {
-            this.logger.info('grpc server disabled')
-
-            return
-        }
-
-        Object.assign(protobuf.wrappers, wrappers)
-        this.grpcServer = new GrpcServer(this.config.grpcServer, this.logger)
-    }
-
     private readonly grpcServer: GrpcServer | undefined
 
     private readonly streamConnections: Map<string, ServerWritableStream<GenericObject, unknown>> = new Map()
@@ -88,6 +76,31 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         [0]: GrpcStatusCode.UNKNOWN,
     }
 
+    constructor(
+        private readonly config: BaseConfig,
+        private readonly actionList: AppAction[],
+        private readonly logger: Logger,
+        private readonly actionExecutor: ActionExecutor,
+        private readonly systemServiceName: string,
+        private readonly serviceName: string,
+        private readonly healthCheck: HealthCheck | undefined,
+    ) {
+        if (!this.config.grpcServer?.isEnabled) {
+            this.logger.info('grpc server disabled')
+
+            return
+        }
+
+        Object.assign(protobuf.wrappers, wrappers)
+        this.grpcServer = new GrpcServer(
+            this.config.grpcServer,
+            this.logger,
+            this.config.healthCheck?.isEnabled ? this.healthCheck : undefined,
+            this.serviceName,
+            utils.getServiceVersion(),
+        )
+    }
+
     async onHealthCheck(): Promise<HealthCheckResult<GrpcServiceStatus>> {
         if (!this.grpcServer) {
             return { status: HttpStatusCode.OK, details: { grpcServer: 'DISABLED' } }
@@ -101,12 +114,14 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         }
     }
 
-    async onInit(): Promise<void> {
+    async onInit(): Promise<OnInitResults['grpcService']> {
         if (!this.grpcServer) {
-            return
+            return {}
         }
 
-        await this.grpcServer.start(this.provideGrpcServiceImplementation.bind(this))
+        const port = await this.grpcServer.start(this.provideGrpcServiceImplementation.bind(this))
+
+        return { serverPort: port }
     }
 
     async onDestroy(): Promise<void> {
@@ -118,7 +133,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         await this.grpcServer?.stop()
     }
 
-    private provideGrpcServiceImplementation(serviceName: string, service: ServiceDefinition): UntypedServiceImplementation {
+    private provideGrpcServiceImplementation(service: ServiceDefinition): UntypedServiceImplementation {
         const serviceImplementation: UntypedServiceImplementation = {}
 
         for (const grpcMethod in service) {
@@ -133,21 +148,18 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                 switch (this.getMethodType(method)) {
                     case GrpcMethodType.UNARY: {
                         serviceImplementation[grpcMethod] = this.provideGrpcMethodImplementation(
-                            serviceName,
                             this.provideAppActions(originalName, method),
                         )
                         break
                     }
                     case GrpcMethodType.SERVER_STREAM: {
                         serviceImplementation[grpcMethod] = this.provideStreamGrpcMethodImplementation(
-                            serviceName,
                             this.provideAppActions(originalName, method),
                         )
                         break
                     }
                     case GrpcMethodType.BIDI_STREAM: {
                         serviceImplementation[grpcMethod] = this.provideStreamGrpcMethodImplementation(
-                            serviceName,
                             this.provideAppActions(originalName, method),
                         )
                         break
@@ -174,153 +186,293 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         }
     }
 
-    private provideStreamGrpcMethodImplementation(serviceName: string, actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
+    private provideStreamGrpcMethodImplementation(actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
         return async (input: ServerWritableStream<GenericObject, unknown>) => {
             const { metadata, request } = input
             const streamId = randomUUID()
 
-            metadata.set('stream-id', streamId)
+            metadata.set(grpcMetadataKeys.STREAM_ID, streamId)
 
-            const actHeaders = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
-            const actionInstance = <GrpcServerStreamAction>this.getActionInstance(actHeaders.actionVersion, actions)
-            const mobileUid = actHeaders.mobileUid
+            const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
+            const actionInstance = this.getActionInstance(headers.actionVersion, actions) as GrpcServerStreamAction
+            const mobileUid = headers.mobileUid
 
-            this.streamConnections.set(streamId, input)
-            if ('subscribeChannel' in actionInstance && mobileUid) {
-                const handler = async (data: GenericObject): Promise<void> => {
-                    this.logger.info('Publishing to channel ' + mobileUid, data)
-                    input.write(data)
-                }
+            let tracing: MetaTracing | undefined
+            if (headers.tracing) {
+                tracing = JSON.parse(headers.tracing)
+            }
 
-                const streamKey = { mobileUid, streamId }
+            if (!headers.traceparent) {
+                headers.traceparent = tracing?.traceparent
+            }
 
-                try {
-                    actionInstance.subscribeChannel(streamKey, handler)
-                } catch (err) {
-                    utils.handleError(err, (error) => {
-                        if (error.getCode() === ErrorCode.SubscriptionsExists) {
-                            const subscriptions = <string[]>error.getData().subscriptions ?? []
+            if (!headers.tracestate) {
+                headers.tracestate = tracing?.tracestate
+            }
 
-                            this.logger.info(`Closing existing connections by mobileUid ${mobileUid}`, { subscriptions })
-                            for (const existingStreamId of subscriptions) {
-                                const connection = this.streamConnections.get(existingStreamId)
-                                if (connection) {
-                                    actionInstance.unsubscribeChannel({ streamId: existingStreamId, mobileUid })
-                                    connection.end()
+            const tracer = trace.getTracer(this.systemServiceName)
+
+            let actionName = 'unknown'
+            const baseActionInstance = actionInstance as GrpcAppAction
+            if (baseActionInstance.grpcMethod?.path) {
+                actionName = baseActionInstance.grpcMethod?.path
+            }
+
+            const baseAttributes = {
+                mobile_uid: mobileUid,
+                stream_id: streamId,
+            }
+
+            const telemetryActiveContext = propagation.extract(context.active(), headers)
+
+            const span = tracer.startSpan(
+                `grpc stream ${actionName}`,
+                { kind: SpanKind.SERVER, attributes: baseAttributes },
+                telemetryActiveContext,
+            )
+
+            await context.with(trace.setSpan(telemetryActiveContext, span), async () => {
+                this.streamConnections.set(streamId, input)
+                if ('subscribeChannel' in actionInstance && mobileUid) {
+                    const handler = async (data: GenericObject): Promise<void> => {
+                        this.logger.info('Publishing to channel ' + mobileUid, data)
+                        span.addEvent('channelPublish')
+                        input.write(data)
+                    }
+
+                    const streamKey = { mobileUid, streamId }
+
+                    try {
+                        span.addEvent('subscribeChannel')
+                        actionInstance.subscribeChannel(streamKey, handler)
+                    } catch (err) {
+                        utils.handleError(err, (error) => {
+                            span.recordException({
+                                message: error.getMessage(),
+                                code: error.getCode(),
+                                name: error.getName(),
+                            })
+
+                            if (error.getCode() === ErrorCode.SubscriptionsExists) {
+                                const subscriptions = (error.getData().subscriptions as string[]) ?? []
+
+                                this.logger.info(`Closing existing connections by mobileUid ${mobileUid}`, { subscriptions })
+                                for (const existingStreamId of subscriptions) {
+                                    const connection = this.streamConnections.get(existingStreamId)
+                                    if (connection) {
+                                        actionInstance.unsubscribeChannel({ streamId: existingStreamId, mobileUid })
+                                        connection.end()
+                                    }
                                 }
+
+                                actionInstance.subscribeChannel(streamKey, handler)
+                                span.addEvent('channelReconnect')
+
+                                return
                             }
 
-                            actionInstance.subscribeChannel(streamKey, handler)
+                            this.logger.error('Failed to subscribe to grpc stream channel', { error: error.getMessage(), mobileUid })
 
-                            return
-                        }
+                            this.logger.error('Failed to reopen connection for the mobileUid ' + mobileUid)
 
-                        this.logger.error('Failed to reopen connection for the mobileUid ' + mobileUid)
-                        input.end()
-                    })
-                }
-            }
-
-            if ('onConnectionOpened' in actionInstance) {
-                try {
-                    actionInstance.onConnectionOpened(actHeaders, request)
-                } catch (err) {
-                    utils.handleError(err, (error) => this.logger.error('Failed to open action connection', { err: error }))
-                    input.end()
-                }
-            }
-
-            input.addListener('end', () => {
-                input.end()
-            })
-            input.prependListener('close', () => {
-                if ('unsubscribeChannel' in actionInstance && mobileUid) {
-                    actionInstance.unsubscribeChannel({ mobileUid, streamId })
-                }
-
-                if ('onConnectionClosed' in actionInstance) {
-                    try {
-                        actionInstance.onConnectionClosed(actHeaders, request)
-                    } catch (err) {
-                        utils.handleError(err, (error) => this.logger.error('Failed to close action connection gracefully', { err: error }))
+                            input.end()
+                            span.setStatus({ code: SpanStatusCode.ERROR, message: error.getMessage() })
+                            span.end()
+                        })
                     }
                 }
 
-                this.streamConnections.delete(streamId)
-            })
-            input.addListener('data', async (data: GenericObject) => {
-                const response = await this.executeAction(actionInstance, metadata, actHeaders, data, serviceName)
+                if ('onConnectionOpened' in actionInstance) {
+                    try {
+                        actionInstance.onConnectionOpened(headers, request)
+                        span.addEvent('onConnectionOpened')
+                    } catch (err) {
+                        utils.handleError(err, (error) => {
+                            span.recordException({
+                                message: error.getMessage(),
+                                code: error.getCode(),
+                                name: error.getName(),
+                            })
+                            span.setStatus({ code: SpanStatusCode.ERROR, message: error.getMessage() })
+                            this.logger.error('Failed to open action connection', { err: error })
+                        })
 
-                if (response) {
-                    input.write(response)
+                        input.end()
+                        span.end()
+                    }
+                }
+
+                input.addListener('end', () => {
+                    this.logger.info('Grpc stream ended', { streamId })
+
+                    span.addEvent('stream ended')
+                    span.end()
+                    input.end()
+                })
+                input.prependListener('close', () => {
+                    if ('unsubscribeChannel' in actionInstance && mobileUid) {
+                        actionInstance.unsubscribeChannel({ mobileUid, streamId })
+                        span.addEvent('unsubscribeChannel')
+                    }
+
+                    if ('onConnectionClosed' in actionInstance) {
+                        try {
+                            actionInstance.onConnectionClosed(headers, request)
+                            span.addEvent('onConnectionClosed')
+                        } catch (err) {
+                            utils.handleError(err, (error) => {
+                                span.recordException({
+                                    message: error.getMessage(),
+                                    code: error.getCode(),
+                                    name: error.getName(),
+                                })
+
+                                this.logger.error('Failed to close action connection gracefully', { err: error })
+                            })
+                        }
+                    }
+
+                    this.logger.info('Grpc stream closed', { streamId })
+
+                    this.streamConnections.delete(streamId)
+
+                    span.addEvent('stream closed')
+                    span.end()
+                })
+                input.prependListener('error', (err) => {
+                    span.recordException({
+                        name: err.name,
+                        message: err.message,
+                    })
+                    this.logger.error('Error in grpc stream', { name: err.name, message: err.message, stack: err.stack, streamId })
+                })
+                input.addListener('data', async (data: GenericObject) => {
+                    const ctx = trace.setSpanContext(context.active(), span.spanContext())
+                    const dataSpan = tracer.startSpan(`onData ${actionName}`, { kind: SpanKind.SERVER, attributes: baseAttributes }, ctx)
+
+                    await context.with(trace.setSpan(ctx, dataSpan), async () => {
+                        dataSpan.setAttributes({
+                            mobile_uid: mobileUid,
+                            stream_id: streamId,
+                        })
+
+                        try {
+                            const response = await this.executeAction(actionInstance, metadata, headers, data)
+
+                            if (response) {
+                                input.write(response)
+                            }
+                        } catch (err) {
+                            utils.handleError(err, (error) => {
+                                dataSpan.recordException({
+                                    message: error.getMessage(),
+                                    code: error.getCode(),
+                                    name: error.getName(),
+                                })
+                                dataSpan.setStatus({ code: SpanStatusCode.ERROR, message: error.getMessage() })
+                                this.logger.error('Failed to open action connection', { err: error })
+                            })
+                        } finally {
+                            dataSpan.end()
+                        }
+                    })
+                })
+
+                if (request) {
+                    span.addEvent('writing data into stream', {
+                        keys: Object.keys(request),
+                    })
+                    input.emit('data', request)
                 }
             })
-
-            if (request) {
-                input.emit('data', request)
-            }
         }
     }
 
-    private provideGrpcMethodImplementation(serviceName: string, actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
+    private provideGrpcMethodImplementation(actions: Map<ActionVersion, GrpcAppAction>): UntypedHandleCall {
         return async (
             input: ServerUnaryCall<GenericObject, unknown>,
             callback: (err: ServerErrorResponse | null, resp: unknown) => void,
         ) => {
-            try {
-                const { metadata, request: params } = input
-                const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
-                const actionInstance = this.getActionInstance(headers.actionVersion, actions)
+            const tracer = trace.getTracer(this.systemServiceName)
 
-                const response = await this.executeAction(actionInstance, metadata, headers, params, serviceName)
+            await tracer.startActiveSpan('grpc start', async (span: Span) => {
+                const responseMetadata = new Metadata()
 
-                if (callback) {
-                    callback(null, response)
+                responseMetadata.set(grpcMetadataKeys.HANDLED_BY, this.systemServiceName)
+
+                try {
+                    const { metadata, request: params } = input
+                    const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
+                    const actionInstance = this.getActionInstance(headers.actionVersion, actions)
+
+                    if (actionInstance.grpcMethod?.path) {
+                        span.updateName(`start ${actionInstance.grpcMethod?.path}`)
+                    }
+
+                    let tracing: MetaTracing | undefined
+                    if (headers.tracing) {
+                        tracing = JSON.parse(headers.tracing)
+                    }
+
+                    if (!headers.traceparent) {
+                        headers.traceparent = tracing?.traceparent
+                    }
+
+                    if (!headers.tracestate) {
+                        headers.tracestate = tracing?.tracestate
+                    }
+
+                    const response = await this.executeAction(actionInstance, metadata, headers, params)
+
+                    span.addEvent('executeAction called')
+
+                    input.sendMetadata(responseMetadata)
+
+                    if (callback) {
+                        callback(null, response)
+                        span.addEvent('callback called')
+                    }
+
+                    span.setStatus({ code: SpanStatusCode.OK })
+                } catch (err) {
+                    this.logger.error('Error while executing grpc method', { err })
+
+                    utils.handleError(err, (apiError) => {
+                        callback(this.mapApiErrorToRpcError(apiError, responseMetadata), null)
+
+                        span.recordException({
+                            message: apiError.getMessage(),
+                            code: apiError.getCode(),
+                            name: apiError.getName(),
+                        })
+                        span.setStatus({ code: SpanStatusCode.ERROR, message: apiError.getMessage() })
+                    })
+                } finally {
+                    span.end()
                 }
-            } catch (err) {
-                this.logger.error('Error while executing grpc method', { err })
-
-                utils.handleError(err, (apiError) => {
-                    callback(this.mapApiErrorToRpcError(apiError), null)
-                })
-            }
+            })
         }
     }
 
     private getActionInstance(actionVersion: ActionVersion, actions: Map<ActionVersion, GrpcAppAction>): GrpcAppAction {
         const actionInstance = actions.get(actionVersion)
+        if (actionInstance) {
+            return actionInstance
+        }
 
-        if (!actionInstance) {
+        const actionInstanceByDefaultVersion = actions.get(ActionVersion.V1)
+        if (!actionInstanceByDefaultVersion || actionInstanceByDefaultVersion.actionVersion) {
             throw new HttpError('action not found for version ' + actionVersion, HttpStatusCode.NOT_IMPLEMENTED)
         }
 
-        return actionInstance
+        return actionInstanceByDefaultVersion
     }
 
-    private async executeAction(
-        action: GrpcAppAction,
-        metadata: Metadata,
-        headers: ActHeaders,
-        params: GenericObject,
-        serviceName: string,
-    ): Promise<unknown> {
+    private async executeAction(action: GrpcAppAction, metadata: Metadata, headers: ActHeaders, params: GenericObject): Promise<unknown> {
         const actionArguments = {
-            session: this.prepareActSessionFromGrpcInput(metadata),
+            session: this.prepareActSessionFromGrpcInput(metadata) || { sessionType: SessionType.None },
             headers,
             params,
-        }
-
-        let tracing: MetaTracing | undefined
-        if (headers.tracing) {
-            tracing = JSON.parse(headers.tracing)
-        }
-
-        if (!headers.traceparent) {
-            headers.traceparent = tracing?.traceparent
-        }
-
-        if (!headers.tracestate) {
-            headers.tracestate = tracing?.tracestate
         }
 
         return await this.actionExecutor.execute({
@@ -329,7 +481,6 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             actionArguments,
             transport: RequestMechanism.Grpc,
             spanKind: SpanKind.SERVER,
-            serviceName,
         })
     }
 
@@ -345,6 +496,14 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
 
             actionInstance.grpcMethod = grpcMethod
             actions.set(actionVersion, actionInstance)
+
+            if (this.grpcServer?.schemaRegistry) {
+                const sessionType = Array.isArray(actionInstance.sessionType)
+                    ? actionInstance.sessionType.join(',')
+                    : String(actionInstance.sessionType)
+
+                this.grpcServer.schemaRegistry.setActionInfo(grpcMethod.path, actionInstance.name, sessionType)
+            }
         }
 
         return actions
@@ -353,56 +512,68 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     private prepareActHeadersFromGrpcInput(metadata: Metadata, actVersions: ActionVersion[]): ActHeaders {
         const headers: ActHeaders = { actionVersion: this.getDefaultActionVersion(actVersions), traceId: randomUUID() }
 
-        if (this.hasMetadataProperty(metadata, 'actionversion')) {
-            headers.actionVersion = <ActionVersion>metadata.get('actionversion')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.ACTION_VERSION)) {
+            headers.actionVersion = metadata.get(grpcMetadataKeys.ACTION_VERSION)[0] as ActionVersion
         }
 
-        if (this.hasMetadataProperty(metadata, 'traceid')) {
-            headers.traceId = <string>metadata.get('traceid')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TRACE_ID)) {
+            headers.traceId = metadata.get(grpcMetadataKeys.TRACE_ID)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'acceptlanguage')) {
-            headers.acceptLanguage = <string>metadata.get('acceptlanguage')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.ACCEPT_LANGUAGE)) {
+            headers.acceptLanguage = metadata.get(grpcMetadataKeys.ACCEPT_LANGUAGE)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'platformtype')) {
-            headers.platformType = <PlatformType>metadata.get('platformtype')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.PLATFORM_TYPE)) {
+            headers.platformType = metadata.get(grpcMetadataKeys.PLATFORM_TYPE)[0] as PlatformType
         }
 
-        if (this.hasMetadataProperty(metadata, 'mobileuid')) {
-            headers.mobileUid = <string>metadata.get('mobileuid')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.MOBILE_UID)) {
+            headers.mobileUid = metadata.get(grpcMetadataKeys.MOBILE_UID)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'appversion')) {
-            headers.appVersion = <string>metadata.get('appversion')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.APP_VERSION)) {
+            headers.appVersion = metadata.get(grpcMetadataKeys.APP_VERSION)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'platformversion')) {
-            headers.platformVersion = <string>metadata.get('platformversion')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.PLATFORM_VERSION)) {
+            headers.platformVersion = metadata.get(grpcMetadataKeys.PLATFORM_VERSION)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'serviceсode')) {
-            headers.serviceCode = <string>metadata.get('serviceсode')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.SERVICE_CODE)) {
+            headers.serviceCode = metadata.get(grpcMetadataKeys.SERVICE_CODE)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'tracing')) {
-            headers.tracing = <string>metadata.get('tracing')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TRACING)) {
+            headers.tracing = metadata.get(grpcMetadataKeys.TRACING)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'traceparent')) {
-            headers.traceparent = <string>metadata.get('traceparent')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TRACE_PARENT)) {
+            headers.traceparent = metadata.get(grpcMetadataKeys.TRACE_PARENT)[0] as string
         }
 
-        if (this.hasMetadataProperty(metadata, 'tracestate')) {
-            headers.tracestate = <string>metadata.get('tracestate')[0]
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TRACE_STATE)) {
+            headers.tracestate = metadata.get(grpcMetadataKeys.TRACE_STATE)[0] as string
+        }
+
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.CONTENT_TYPE)) {
+            headers.contentType = metadata.get(grpcMetadataKeys.CONTENT_TYPE)[0] as MimeType
+        }
+
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.SENT_FROM)) {
+            headers.sentFrom = metadata.get(grpcMetadataKeys.SENT_FROM)[0] as string
+        }
+
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TOKEN)) {
+            headers.token = metadata.get(grpcMetadataKeys.TOKEN)[0] as string
         }
 
         return headers
     }
 
     private prepareActSessionFromGrpcInput(metadata: Metadata): ActionSession | undefined {
-        if (this.hasMetadataProperty(metadata, 'session')) {
-            return JSON.parse(Buffer.from(<string>metadata.get('session')[0], 'base64').toString())
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.SESSION)) {
+            return JSON.parse(Buffer.from(metadata.get(grpcMetadataKeys.SESSION)[0] as string, 'base64').toString())
         }
 
         return undefined
@@ -416,24 +587,40 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         if (actVersions.length > 1) {
             const actVersionsOrder = Object.values(ActionVersion)
 
-            return actVersions.sort((a, b) => actVersionsOrder.indexOf(b) - actVersionsOrder.indexOf(a))[0]
+            return actVersions.toSorted((a, b) => actVersionsOrder.indexOf(b) - actVersionsOrder.indexOf(a))[0]
         }
 
         return actVersions[0]
     }
 
-    private mapApiErrorToRpcError(apiError: ApiError): ServerErrorResponse {
+    private mapApiErrorToRpcError(apiError: ApiError, metadata: Metadata): ServerErrorResponse {
         const errorData = apiError.getData()
         const processCode = errorData.processCode
-        const metadata = new Metadata()
 
         if (processCode) {
-            metadata.set('processCode', processCode.toString())
+            metadata.set(grpcMetadataKeys.PROCESS_CODE, processCode.toString())
         }
 
+        metadata.set(grpcMetadataKeys.ORIGINAL_ERROR, this.serializeApiError(apiError))
+
         const rpcErrorCode: number = this.httpCodeToGrpcCode[apiError.getCode()] ?? this.httpCodeToGrpcCode[errorData.code ?? 0]
-        const rpcError = { ...new ApiError(apiError.getMessage(), rpcErrorCode, errorData), metadata, code: rpcErrorCode }
+        const rpcError: ServerErrorResponse = {
+            ...apiError,
+            code: rpcErrorCode,
+            details: apiError.getMessage(),
+            metadata,
+        }
 
         return rpcError
+    }
+
+    private serializeApiError(apiError: ApiError): string {
+        return JSON.stringify({
+            name: apiError.getName(),
+            message: utils.encodeValuesWithIterator(apiError.getMessage()),
+            code: apiError.getCode(),
+            type: apiError.getType(),
+            data: utils.encodeValuesWithIterator(apiError.getData()),
+        })
     }
 }

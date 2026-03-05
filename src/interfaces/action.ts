@@ -1,32 +1,35 @@
 import { MethodDefinition } from '@grpc/grpc-js'
 
 import { BadRequestError } from '@diia-inhouse/errors'
-import { ActionArguments, ActionVersion, GenericObject, SessionType } from '@diia-inhouse/types'
+import { ActionContext, ActionVersion, BaseSession, GenericObject } from '@diia-inhouse/types'
 import { ActHeaders } from '@diia-inhouse/types/dist/types/common'
 import { ValidationSchema } from '@diia-inhouse/validators'
 
 import { ErrorCode } from './errorCode'
 import { DeviceMultipleConnectionPolicy, StreamKey } from './grpc'
 
-export interface AppAction<T = ActionArguments> {
-    /** @deprecated sessionType doesn't have any sense as it doesn't impact logic */
-    sessionType?: SessionType
+export interface AppAction<T extends ActionContext<Record<never, never>, BaseSession> = ActionContext<Record<never, never>, BaseSession>> {
+    sessionType: T['session']['sessionType'] | readonly T['session']['sessionType'][]
     /** @deprecated separate action with another name that explicitly contains the version should be created: getToken -> getTokenV3 */
     actionVersion?: ActionVersion
     name: string
     validationRules?: ValidationSchema
-    getLockResource?(args: T): string
-    getServiceCode?(args: T): string
-    handler(args: T): unknown
 
     /** @info use only for development! */
     __actionResponse?: GenericObject
+
+    tryLockTimeout?: number
+    getLockResource?(args: T): string
+    getServiceCode?(args: T): string
+    handler(args: T): unknown
 }
 
 /**
  * marker interface indicates that action supports communication via grpc transport
  */
-export interface GrpcAppAction<T = ActionArguments> extends AppAction<T> {
+export interface GrpcAppAction<
+    T extends ActionContext<Record<never, never>, BaseSession> = ActionContext<Record<never, never>, BaseSession>,
+> extends AppAction<T> {
     grpcMethod?: MethodDefinition<unknown, unknown>
 }
 
@@ -43,22 +46,17 @@ export interface Subscription {
     handler: SubscriptionHandler
 }
 
-export abstract class GrpcServerStreamAction implements GrpcStreamAction {
+export abstract class GrpcServerStreamAction<
+    T extends ActionContext<Record<never, never>, BaseSession> = ActionContext<Record<never, never>, BaseSession>,
+> implements GrpcStreamAction {
+    protected deviceMultipleConnectionPolicy: DeviceMultipleConnectionPolicy =
+        DeviceMultipleConnectionPolicy.FORBID_CLOSE_PREVIOUS_CONNECTION
+
     private deviceSubscriptions = new Map<string, Subscription[]>()
 
     abstract name: string
 
-    /** @deprecated sessionType doesn't have any sense as it doesn't impact logic */
-    abstract sessionType?: SessionType
-
-    abstract handler(args: ActionArguments): unknown
-
-    abstract onConnectionClosed(metadata: ActHeaders, request: GenericObject): void
-
-    abstract onConnectionOpened(metadata: ActHeaders, request: GenericObject): void
-
-    protected deviceMultipleConnectionPolicy: DeviceMultipleConnectionPolicy =
-        DeviceMultipleConnectionPolicy.FORBID_CLOSE_PREVIOUS_CONNECTION
+    abstract sessionType: T['session']['sessionType'] | readonly T['session']['sessionType'][]
 
     subscribeChannel(streamKey: StreamKey, handler: SubscriptionHandler): void | never {
         const { mobileUid, streamId } = streamKey
@@ -129,4 +127,10 @@ export abstract class GrpcServerStreamAction implements GrpcStreamAction {
             }
         }
     }
+
+    abstract handler(args: T): unknown
+
+    abstract onConnectionClosed(metadata: ActHeaders, request: GenericObject): void
+
+    abstract onConnectionOpened(metadata: ActHeaders, request: GenericObject): void
 }

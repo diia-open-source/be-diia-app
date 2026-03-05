@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
-import { SEMATTRS_MESSAGING_DESTINATION, SEMATTRS_MESSAGING_SYSTEM } from '@opentelemetry/semantic-conventions'
 import cookieParser from 'cookie-parser'
 import { extend } from 'lodash'
 import {
@@ -20,6 +19,7 @@ import ApiService from 'moleculer-web'
 
 import { MetricsService, RequestMechanism, RequestStatus } from '@diia-inhouse/diia-metrics'
 import { EnvService } from '@diia-inhouse/env'
+import { ApiError } from '@diia-inhouse/errors'
 import { RedlockService } from '@diia-inhouse/redis'
 import {
     ActArguments,
@@ -36,8 +36,8 @@ import { utils } from '@diia-inhouse/utils'
 import { ActionExecutor } from '../actionExecutor'
 import { AppAction, AppApiService, BaseConfig } from '../interfaces'
 import { ContextMeta } from '../interfaces/moleculer'
+import { ATTR_MESSAGING_DESTINATION_NAME, ATTR_MESSAGING_SYSTEM } from '../interfaces/tracing'
 import { ACTION_PARAMS, ACTION_RESPONSE } from '../plugins/pluginConstants'
-
 import MoleculerLogger from './moleculerLogger'
 
 export default class MoleculerService implements OnInit, OnDestroy {
@@ -47,6 +47,7 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
     constructor(
         private readonly serviceName: string,
+        private readonly systemServiceName: string,
         private readonly actionExecutor: ActionExecutor,
         private readonly actionList: AppAction[],
 
@@ -61,60 +62,7 @@ export default class MoleculerService implements OnInit, OnDestroy {
         private readonly apiService: AppApiService | null = null,
         private readonly redlock: RedlockService | null = null,
     ) {
-        const brokerOptions: BrokerOptions = {
-            transporter: this.config.transporter,
-            logger: new MoleculerLogger(this.logger),
-            logLevel: 'warn',
-            registry: {
-                strategy: this.config.balancing?.strategy || 'RoundRobin',
-                strategyOptions: this.config.balancing?.strategyOptions || {},
-            },
-            tracking: {
-                enabled: process.env.CONTEXT_TRACKING_ENABLED ? process.env.CONTEXT_TRACKING_ENABLED === 'true' : true,
-                shutdownTimeout: process.env.CONTEXT_TRACKING_TIMEOUT ? Number.parseInt(process.env.CONTEXT_TRACKING_TIMEOUT, 10) : 10000,
-            },
-            metrics: {
-                enabled: this.config.metrics?.moleculer?.prometheus?.isEnabled || false,
-                reporter: [
-                    {
-                        type: 'Prometheus',
-                        options: {
-                            port: this.config.metrics?.moleculer?.prometheus?.port ?? 3031,
-                            path: this.config.metrics?.moleculer?.prometheus?.path,
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            defaultLabels: (registry: any): Record<string, unknown> => ({
-                                namespace: registry.broker.nasmespace,
-                                nodeID: registry.broker.nodeID,
-                            }),
-                        },
-                    },
-                ],
-            },
-        }
-
-        if (this.config.tracing) {
-            const {
-                zipkin: { isEnabled, baseURL, sendIntervalSec },
-            } = this.config.tracing
-
-            brokerOptions.tracing = {
-                enabled: isEnabled,
-                exporter: {
-                    type: 'Zipkin',
-                    options: {
-                        baseURL,
-                        interval: sendIntervalSec,
-                        payloadOptions: {
-                            debug: false,
-                            shared: false,
-                        },
-                        defaultTags: null,
-                    },
-                },
-            }
-        }
-
-        this.serviceBroker = new ServiceBroker(brokerOptions)
+        this.serviceBroker = new ServiceBroker(this.createBrokerOptions())
     }
 
     async onInit(): Promise<void> {
@@ -141,25 +89,24 @@ export default class MoleculerService implements OnInit, OnDestroy {
         const serviceActionName = `${serviceName}.${actionName}`
         let span: Span | undefined
         const startTime = process.hrtime.bigint()
-        const defaultLabels = {
+        const defaultLabels: { mechanism: RequestMechanism; source: string; route: string; destination?: string } = {
             mechanism: RequestMechanism.Moleculer,
-            source: this.serviceName,
-            destination: serviceName,
-            route: serviceActionName,
+            source: this.systemServiceName,
+            route: actionName,
         }
 
         try {
             const broker: ServiceBroker = this.serviceBroker
 
-            const tracer = trace.getTracer(this.serviceName)
+            const tracer = trace.getTracer(this.systemServiceName)
 
             span = tracer.startSpan(
-                `send ${serviceActionName}`,
+                `send ${actionName}`,
                 {
                     kind: SpanKind.PRODUCER,
                     attributes: {
-                        [SEMATTRS_MESSAGING_SYSTEM]: RequestMechanism.Moleculer,
-                        [SEMATTRS_MESSAGING_DESTINATION]: serviceName,
+                        [ATTR_MESSAGING_SYSTEM]: RequestMechanism.Moleculer,
+                        [ATTR_MESSAGING_DESTINATION_NAME]: serviceName,
                     },
                 },
                 context.active(),
@@ -171,7 +118,8 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
             const headers = { ...this.asyncLocalStorage.getStore()?.logData, ...argsHeaders }
             const argsWithParams: Record<string, unknown> = { params, session, headers }
-            const callingOpts = { ...opts, meta: { tracing } }
+            // according to moleculer docs ctx.meta is used for two-way metadata exchange between caller and server
+            const callingOpts = { ...opts, meta: { tracing: { ...tracing, sentFrom: this.systemServiceName, handledBy: '' } } }
 
             this.logger.info(`ACT OUT: ${serviceActionName}`, {
                 params,
@@ -182,6 +130,10 @@ export default class MoleculerService implements OnInit, OnDestroy {
                 callingOpts,
             })
             const res = await broker.call<T, typeof argsWithParams>(serviceActionName, argsWithParams, callingOpts)
+
+            if (callingOpts.meta.tracing.handledBy !== '') {
+                defaultLabels.destination = callingOpts.meta.tracing.handledBy
+            }
 
             span.setStatus({ code: SpanStatusCode.OK })
             span.end()
@@ -194,29 +146,39 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
             return res
         } catch (err) {
-            utils.handleError(err, (apiErr) => {
+            return utils.handleError(err, (apiErr) => {
+                const data = apiErr.getData()
+                const type = apiErr.getType()
+                const code = apiErr.getCode()
+                const message = apiErr.getMessage()
+                const name = apiErr.getName()
+
+                data.opOriginalError ||= { type }
+
                 span?.recordException({
-                    message: apiErr.getMessage(),
-                    code: apiErr.getCode(),
-                    name: apiErr.getName(),
+                    message,
+                    code,
+                    name,
                 })
-                span?.setStatus({ code: SpanStatusCode.ERROR, message: apiErr.getMessage() })
+
+                span?.setStatus({ code: SpanStatusCode.ERROR, message })
 
                 this.metrics.totalTimerMetric.observeSeconds(
                     {
                         ...defaultLabels,
                         status: RequestStatus.Failed,
-                        errorType: apiErr.getType(),
-                        statusCode: apiErr.getCode(),
+                        errorType: type,
+                        statusCode: code,
                     },
                     process.hrtime.bigint() - startTime,
                 )
+
+                span?.end()
+
+                this.logger.error(`ACT OUT FAILED: ${serviceActionName}`, { err, service: serviceName, action: actionName, args })
+
+                throw new ApiError(message, code, data)
             })
-
-            span?.end()
-
-            this.logger.error(`ACT OUT FAILED: ${serviceActionName}`, { err, service: serviceName, action: actionName, args })
-            throw err
         }
     }
 
@@ -231,6 +193,63 @@ export default class MoleculerService implements OnInit, OnDestroy {
         } catch {
             return
         }
+    }
+
+    private createBrokerOptions(): BrokerOptions {
+        const brokerOptions: BrokerOptions = {
+            transporter: this.config.transporter,
+            logger: new MoleculerLogger(this.logger),
+            logLevel: 'warn',
+            registry: {
+                strategy: this.config.balancing?.strategy || 'RoundRobin',
+                strategyOptions: this.config.balancing?.strategyOptions || {},
+            },
+            tracking: {
+                enabled: process.env.CONTEXT_TRACKING_ENABLED ? process.env.CONTEXT_TRACKING_ENABLED === 'true' : true,
+                shutdownTimeout: process.env.CONTEXT_TRACKING_TIMEOUT ? Number.parseInt(process.env.CONTEXT_TRACKING_TIMEOUT, 10) : 10000,
+            },
+            metrics: {
+                enabled: this.config.metrics?.moleculer?.prometheus?.isEnabled || false,
+                reporter: [
+                    {
+                        type: 'Prometheus',
+                        options: {
+                            port: this.config.metrics?.moleculer?.prometheus?.port ?? 3031,
+                            path: this.config.metrics?.moleculer?.prometheus?.path,
+                            defaultLabels: (registry: { broker: { nasmespace: string; nodeID: string } }): Record<string, unknown> => ({
+                                namespace: registry.broker.nasmespace,
+                                nodeID: registry.broker.nodeID,
+                            }),
+                        },
+                    },
+                ],
+            },
+            skipProcessEventRegistration: true,
+        }
+
+        if (this.config.tracing) {
+            const {
+                zipkin: { isEnabled, baseURL, sendIntervalSec },
+            } = this.config.tracing
+
+            brokerOptions.tracing = {
+                enabled: isEnabled,
+                exporter: {
+                    type: 'Zipkin',
+                    options: {
+                        baseURL,
+                        interval: sendIntervalSec,
+                        payloadOptions: {
+                            debug: false,
+                            shared: false,
+                        },
+                        defaultTags: null,
+                    },
+                },
+            }
+        }
+
+        return brokerOptions
     }
 
     private addApiService(serviceSchema: ServiceSchema): ServiceSchema {
@@ -305,6 +324,9 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
         const handler: ActionHandler = async (ctx: Context<ActionArguments, ContextMeta>): Promise<unknown> => {
             const { caller, meta, params } = ctx
+
+            meta.tracing ??= {}
+            meta.tracing.handledBy = this.systemServiceName
 
             return await this.actionExecutor.execute({
                 action,

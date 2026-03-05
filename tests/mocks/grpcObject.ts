@@ -14,39 +14,39 @@ interface GrpcActionErrorArguments extends ServiceActionArguments<AppUserActionH
 }
 
 export const grpcObjectWithAction: GrpcObject = {
-    'service-with-action': <ServiceClientConstructor>{
-        service: <ServiceDefinition>(<unknown>{
+    'service-with-action': {
+        service: {
             action: {
                 originalName: 'action',
                 path: '/action',
             },
-        }),
+        } as unknown as ServiceDefinition,
         serviceName: 'action',
-    },
+    } as ServiceClientConstructor,
 }
 
 export const grpcObjectWithActionError: GrpcObject = {
-    'service-with-action-error': <ServiceClientConstructor>{
-        service: <ServiceDefinition>(<unknown>{
+    'service-with-action-error': {
+        service: {
             'action-error': {
                 originalName: 'action-error',
                 path: '/action-error',
             },
-        }),
+        } as unknown as ServiceDefinition,
         serviceName: 'action-error',
-    },
+    } as ServiceClientConstructor,
 }
 
 export const grpcObjectActionRedlock: GrpcObject = {
-    'service-with-action-redlock': <ServiceClientConstructor>{
-        service: <ServiceDefinition>(<unknown>{
+    'service-with-action-redlock': {
+        service: {
             'action-redlock': {
                 originalName: 'action-redlock',
                 path: '/action-redlock',
             },
-        }),
+        } as unknown as ServiceDefinition,
         serviceName: 'action-redlock',
-    },
+    } as ServiceClientConstructor,
 }
 
 export class GrpcAction implements AppAction {

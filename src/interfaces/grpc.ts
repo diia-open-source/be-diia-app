@@ -10,6 +10,13 @@ export interface GrpcServerConfig {
     services: string[]
     isReflectionEnabled: boolean
     maxReceiveMessageLength: number
+    keepAlive?: GrpcServerKeepalive
+}
+
+export interface GrpcServerKeepalive {
+    interval?: number
+    timeout?: number
+    permitWithoutcalls?: 0 | 1
 }
 
 export interface GrpcClientMetadata {
@@ -46,4 +53,4 @@ export enum DeviceMultipleConnectionPolicy {
     FORBID_CLOSE_PREVIOUS_CONNECTION,
 }
 
-export type GrpcServiceImplementationProvider = (serviceName: string, service: ServiceDefinition) => UntypedServiceImplementation
+export type GrpcServiceImplementationProvider = (service: ServiceDefinition) => UntypedServiceImplementation

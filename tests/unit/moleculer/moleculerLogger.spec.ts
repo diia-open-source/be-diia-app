@@ -1,17 +1,17 @@
 import { Loggers } from 'moleculer'
+import { mock } from 'vitest-mock-extended'
 
 import Logger from '@diia-inhouse/diia-logger'
-import { mockInstance } from '@diia-inhouse/test'
 
 import MoleculerLogger from '../../../src/moleculer/moleculerLogger'
 
 describe(`${MoleculerLogger.constructor.name}`, () => {
-    const logger = mockInstance(Logger)
+    const logger = mock<Logger>()
 
     const moleculerLogger = new MoleculerLogger(logger)
 
     describe(`method ${moleculerLogger.getLogHandler.name}`, () => {
-        const logHandler = <Loggers.LogHandler>moleculerLogger.getLogHandler()
+        const logHandler = moleculerLogger.getLogHandler() as Loggers.LogHandler
 
         it('should successfully get log handler and invoke log method when no message', () => {
             logHandler('trace', ['', undefined])
@@ -20,7 +20,7 @@ describe(`${MoleculerLogger.constructor.name}`, () => {
         })
 
         it('should successfully get log handler and invoke log method when only message', () => {
-            logHandler('trace', <[string, unknown]>(<unknown>['trace message']))
+            logHandler('trace', ['trace message'] as unknown as [string, unknown])
 
             expect(logger.trace).toHaveBeenCalledWith('trace message')
         })

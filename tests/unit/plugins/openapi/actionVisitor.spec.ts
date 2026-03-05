@@ -3,18 +3,21 @@ import ts from 'typescript'
 import { ACTION_RESPONSE } from '../../../../src'
 import ActionVisitor from '../../../../src/plugins/openapi/actionVisitor'
 
-jest.mock('../../../../src/plugins/openapi/parser')
-jest.mock('typescript', () => {
-    const mocked = <Record<string, unknown>>jest.createMockFromModule('typescript')
+vi.mock('../../../../src/plugins/openapi/parser')
+vi.mock('typescript', async (importOriginal) => {
+    const original = await importOriginal<typeof import('typescript')>()
 
     return {
-        ...mocked,
-        visitEachChild: jest.fn(),
-        getModifiers: jest.fn(),
-        isClassDeclaration: (): boolean => true,
-        isMethodDeclaration: (): boolean => true,
-        visitNode: (node: unknown, visitClassNode: (node: unknown) => void): void => {
-            visitClassNode(node)
+        ...original,
+        default: {
+            visitEachChild: vi.fn(),
+            getModifiers: vi.fn(),
+            isClassDeclaration: vi.fn().mockReturnValueOnce(true),
+            // isClassDeclaration: (): boolean => true,
+            isMethodDeclaration: (): boolean => true,
+            visitNode: (node: unknown, visitClassNode: (node: unknown) => void): void => {
+                visitClassNode(node)
+            },
         },
     }
 })
@@ -42,9 +45,9 @@ const programMock = {
 }
 const transformationContextMock = {
     factory: {
-        createIdentifier: jest.fn(),
-        createPropertyDeclaration: jest.fn(),
-        updateClassDeclaration: jest.fn(),
+        createIdentifier: vi.fn(),
+        createPropertyDeclaration: vi.fn(),
+        updateClassDeclaration: vi.fn(),
     },
 }
 
@@ -63,10 +66,12 @@ describe(`OpenApi ActionVisitor`, () => {
         }
 
         it('should update class declaration', () => {
+            vi.spyOn(ts, 'isClassDeclaration').mockReturnValueOnce(true).mockReturnValueOnce(true)
+
             ActionVisitor.visit(
-                <ts.SourceFile>(<unknown>nodeWithHandler),
-                <ts.TransformationContext>(<unknown>transformationContextMock),
-                <ts.Program>(<unknown>programMock),
+                nodeWithHandler as unknown as ts.SourceFile,
+                transformationContextMock as unknown as ts.TransformationContext,
+                programMock as unknown as ts.Program,
             )
 
             expect(transformationContextMock.factory.createIdentifier).toHaveBeenCalledWith(ACTION_RESPONSE)
@@ -88,16 +93,16 @@ describe(`OpenApi ActionVisitor`, () => {
             }
 
             ActionVisitor.visit(
-                <ts.SourceFile>(<unknown>node),
-                <ts.TransformationContext>(<unknown>transformationContextMock),
-                <ts.Program>(<unknown>programMock),
+                node as unknown as ts.SourceFile,
+                transformationContextMock as unknown as ts.TransformationContext,
+                programMock as unknown as ts.Program,
             )
 
             expect(ts.visitEachChild).toHaveBeenCalled()
         })
 
         it('should visit each child if signature was not found', () => {
-            jest.spyOn(programMock, 'getTypeChecker').mockReturnValueOnce({
+            vi.spyOn(programMock, 'getTypeChecker').mockReturnValueOnce({
                 getSignatureFromDeclaration(): boolean {
                     return false
                 },
@@ -113,16 +118,16 @@ describe(`OpenApi ActionVisitor`, () => {
             })
 
             ActionVisitor.visit(
-                <ts.SourceFile>(<unknown>nodeWithHandler),
-                <ts.TransformationContext>(<unknown>transformationContextMock),
-                <ts.Program>(<unknown>programMock),
+                nodeWithHandler as unknown as ts.SourceFile,
+                transformationContextMock as unknown as ts.TransformationContext,
+                programMock as unknown as ts.Program,
             )
 
             expect(ts.visitEachChild).toHaveBeenCalled()
         })
 
         it('should visit each child if response type arguments not found', () => {
-            jest.spyOn(programMock, 'getTypeChecker').mockReturnValueOnce({
+            vi.spyOn(programMock, 'getTypeChecker').mockReturnValueOnce({
                 getSignatureFromDeclaration(): boolean {
                     return true
                 },
@@ -139,21 +144,21 @@ describe(`OpenApi ActionVisitor`, () => {
             })
 
             ActionVisitor.visit(
-                <ts.SourceFile>(<unknown>nodeWithHandler),
-                <ts.TransformationContext>(<unknown>transformationContextMock),
-                <ts.Program>(<unknown>programMock),
+                nodeWithHandler as unknown as ts.SourceFile,
+                transformationContextMock as unknown as ts.TransformationContext,
+                programMock as unknown as ts.Program,
             )
 
             expect(ts.visitEachChild).toHaveBeenCalled()
         })
 
         it('should visit each child if node is not a class declaration', () => {
-            jest.spyOn(ts, 'isClassDeclaration').mockReturnValueOnce(false)
+            vi.spyOn(ts, 'isClassDeclaration').mockReturnValueOnce(false)
 
             ActionVisitor.visit(
-                <ts.SourceFile>(<unknown>nodeWithHandler),
-                <ts.TransformationContext>(<unknown>transformationContextMock),
-                <ts.Program>(<unknown>programMock),
+                nodeWithHandler as unknown as ts.SourceFile,
+                transformationContextMock as unknown as ts.TransformationContext,
+                programMock as unknown as ts.Program,
             )
 
             expect(ts.visitEachChild).toHaveBeenCalled()

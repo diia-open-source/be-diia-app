@@ -1,9 +1,12 @@
 {
-    "extends": "@diia-inhouse/configs/tsconfig/tsconfig.esm",
+    "extends": "../tsconfig.json",
     "compilerOptions": {
-        "baseUrl": "../",
+        "types": ["vite/client", "vitest/globals"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
         "noEmit": true,
+        "skipLibCheck": true,
         "strict": true
     },
-    "include": ["./**/*"]
+    "include": ["./**/*", "../vitest.config.mts"]
 }

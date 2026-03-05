@@ -1,16 +1,16 @@
 import { CallOptions, ClientMiddleware, ClientMiddlewareCall, TsProtoServiceDefinition } from 'nice-grpc'
+import { mock } from 'vitest-mock-extended'
 
 import DiiaLogger from '@diia-inhouse/diia-logger'
 import { MetricsService } from '@diia-inhouse/diia-metrics'
-import TestKit, { mockInstance } from '@diia-inhouse/test'
-import { ActionVersion } from '@diia-inhouse/types'
+import TestKit from '@diia-inhouse/test'
+import { ActionVersion, grpcMetadataKeys } from '@diia-inhouse/types'
 
 import { GrpcClientFactory, clientCallOptions } from '../../../src/grpc'
 
 const generatorValue = 'generatorResult'
 
-// eslint-disable-next-line n/no-unsupported-features/node-builtins
-const call = <ClientMiddlewareCall<Request, Response>>(<unknown>{
+const call = {
     method: {
         path: '/test/',
     },
@@ -18,21 +18,21 @@ const call = <ClientMiddlewareCall<Request, Response>>(<unknown>{
         yield generatorValue
     },
     request: '',
-})
+} as unknown as ClientMiddlewareCall<Request, Response>
 
-const options = <CallOptions>(<unknown>{})
+const options = {} as unknown as CallOptions
 
 const client = {}
 
-jest.mock('nice-grpc', () => {
-    const originalModule = jest.requireActual('nice-grpc')
+vi.mock('nice-grpc', async (importOriginal) => {
+    const originalModule = await importOriginal<typeof import('nice-grpc')>()
 
     return {
         __esModule: true,
         ...originalModule,
-        createChannel: jest.fn(),
+        createChannel: vi.fn(),
         ChannelCredentials: {
-            createInsecure: jest.fn(),
+            createInsecure: vi.fn(),
         },
         createClientFactory: (): unknown => ({
             use: (loggingMiddleware: ClientMiddleware) => ({
@@ -85,8 +85,8 @@ jest.mock('nice-grpc', () => {
 
 describe('grpcClientFactory', () => {
     const serviceName = 'Auth'
-    const logger = mockInstance(DiiaLogger)
-    const metrics = mockInstance(MetricsService)
+    const logger = mock<DiiaLogger>()
+    const metrics = mock<MetricsService>()
 
     const grpcClientFactory = new GrpcClientFactory(serviceName, logger, metrics)
 
@@ -111,8 +111,8 @@ describe('function clientCallOptions', () => {
         const { metadata, deadline } = clientCallOptions(grpcMetadata)
 
         expect(deadline).toBe(0)
-        expect(metadata?.get('actionversion')).toBe(grpcMetadata.version)
-        const sessionBase64Decoded = metadata?.get('session')
+        expect(metadata?.get(grpcMetadataKeys.ACTION_VERSION)).toBe(grpcMetadata.version)
+        const sessionBase64Decoded = metadata?.get(grpcMetadataKeys.SESSION)
 
         expect(sessionBase64Decoded).toBeDefined()
     })

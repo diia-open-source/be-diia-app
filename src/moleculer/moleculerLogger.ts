@@ -17,25 +17,27 @@ export default class MoleculerLogger extends Loggers.Base {
     }
 
     getLogHandler(): Loggers.LogHandler | null {
-        return (type: LogLevels, argParams: unknown[]): void => {
-            const level: LogLevel = this.brokerLogLevelsMap[type]
-            const [msg, ...args] = argParams
-            if (!msg || typeof msg !== 'string') {
-                return
-            }
+        return this.handleLog.bind(this)
+    }
 
-            if (args.length > 0) {
-                let data: unknown = args
-                if (args.length === 1) {
-                    data = args[0]
-                }
-
-                this.logger[level](msg, { data })
-
-                return
-            }
-
-            this.logger[level](msg)
+    private handleLog(type: LogLevels, argParams: unknown[]): void {
+        const level: LogLevel = this.brokerLogLevelsMap[type]
+        const [msg, ...args] = argParams
+        if (!msg || typeof msg !== 'string') {
+            return
         }
+
+        if (args.length > 0) {
+            let data: unknown = args
+            if (args.length === 1) {
+                data = args[0]
+            }
+
+            this.logger[level](msg, { data })
+
+            return
+        }
+
+        this.logger[level](msg)
     }
 }

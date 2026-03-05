@@ -30,56 +30,7 @@ class TypeParser {
         }
 
         if (flags === ts.TypeFlags.Object) {
-            const objectType: ts.ObjectType = <ts.ObjectType>type
-
-            if ((<any>this.checker).isArrayType(objectType)) {
-                return this.parseArray(<ts.TypeReference>objectType)
-            }
-
-            if ((<any>this.checker).isTupleType(objectType)) {
-                return this.parseTuple(<ts.TypeReference>objectType)
-            }
-
-            const name: string = objectType.symbol?.name
-            if (this.stringTypes.includes(name)) {
-                return ts.factory.createObjectLiteralExpression([
-                    ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                ])
-            }
-
-            if (name === 'Date') {
-                return ts.factory.createObjectLiteralExpression([
-                    ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                    ts.factory.createPropertyAssignment('format', ts.factory.createStringLiteral('date-time')),
-                ])
-            }
-
-            if (name === 'Buffer') {
-                return ts.factory.createObjectLiteralExpression([
-                    ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                    ts.factory.createPropertyAssignment('format', ts.factory.createStringLiteral('binary')),
-                ])
-            }
-
-            const indexInfo =
-                this?.checker?.getIndexInfoOfType(type, ts.IndexKind.Number) || this?.checker?.getIndexInfoOfType(type, ts.IndexKind.String)
-
-            if (indexInfo) {
-                return this.parseIndexedObject(indexInfo)
-            }
-
-            if (this.isExternalPackage(type)) {
-                const external = this.parseTypeFromExternalPackage(type)
-                if (external) {
-                    return external
-                }
-            }
-
-            if (this.isRecordWithManyKeys(type)) {
-                return this.parseLongRecord(type)
-            }
-
-            return this.parseInterface(type)
+            return this.parseObjectType(type as ts.ObjectType, type)
         }
 
         if (flags === ts.TypeFlags.Union) {
@@ -95,7 +46,7 @@ class TypeParser {
         }
 
         // eslint-disable-next-line no-console
-        console.log(`Unknown type in OpenAPI response generator: ${(<any>type).intrinsicName ?? type.symbol?.getName()}`)
+        console.log(`Unknown type in OpenAPI response generator: ${(type as any).intrinsicName ?? type.symbol?.getName()}`)
 
         return ts.factory.createObjectLiteralExpression()
     }
@@ -103,7 +54,7 @@ class TypeParser {
     parseInterface(type: ts.Type): ts.ObjectLiteralExpression {
         const properties = this.checker
             ?.getPropertiesOfType(type)
-            .filter((property) => property?.declarations?.length || (<any>property).type)
+            .filter((property) => property?.declarations?.length || (property as any).type)
             .filter((property) => {
                 if (property.declarations?.length) {
                     return !ts.isMethodDeclaration(property.declarations[0])
@@ -120,7 +71,7 @@ class TypeParser {
 
                 parsed = this.parseType(nestedType)
             } else {
-                parsed = this.parseType((<any>property).type)
+                parsed = this.parseType((property as any).type)
             }
 
             parsed = this.addMetadataToProperty(property, parsed)
@@ -137,7 +88,7 @@ class TypeParser {
         const requiredValues = properties
             .filter((prop) => prop.declarations)
             .map((prop) => {
-                const declaration = <ts.ParameterDeclaration>prop.declarations?.[0]
+                const declaration = prop.declarations?.[0] as ts.ParameterDeclaration
                 const required: boolean = declaration?.questionToken ? false : true
 
                 if (required) {
@@ -166,7 +117,7 @@ class TypeParser {
                     ts.factory.createPropertyAssignment(
                         'enum',
                         ts.factory.createArrayLiteralExpression([
-                            (<any>type).intrinsicName === 'true' ? ts.factory.createTrue() : ts.factory.createFalse(),
+                            (type as any).intrinsicName === 'true' ? ts.factory.createTrue() : ts.factory.createFalse(),
                         ]),
                     ),
                 )
@@ -178,7 +129,7 @@ class TypeParser {
                 ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
                 ts.factory.createPropertyAssignment(
                     'enum',
-                    ts.factory.createArrayLiteralExpression([this.createLiteral((<any>type).value)]),
+                    ts.factory.createArrayLiteralExpression([this.createLiteral((type as any).value)]),
                 ),
             )
 
@@ -196,17 +147,15 @@ class TypeParser {
     }
 
     parseEnum(type: ts.Type): ts.ObjectLiteralExpression {
-        const enumType: ts.UnionOrIntersectionType = <ts.UnionOrIntersectionType>type
+        const enumType: ts.UnionOrIntersectionType = type as ts.UnionOrIntersectionType
         const values: ts.Expression[] = enumType.types.map((enumProperty) => {
-            return this.createLiteral((<any>enumProperty).value)
+            return this.createLiteral((enumProperty as any).value)
         })
 
-        const props: ts.PropertyAssignment[] = []
-
-        props.push(
+        const props: ts.PropertyAssignment[] = [
             ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
             ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
-        )
+        ]
 
         return ts.factory.createObjectLiteralExpression(props)
     }
@@ -255,7 +204,7 @@ class TypeParser {
     }
 
     parseUnion(type: ts.Type): ts.ObjectLiteralExpression {
-        const unionType: ts.UnionOrIntersectionType = <ts.UnionOrIntersectionType>type
+        const unionType: ts.UnionOrIntersectionType = type as ts.UnionOrIntersectionType
 
         let firstBoolean = true
         const types = unionType.types.filter((unionProperty) => {
@@ -309,20 +258,18 @@ class TypeParser {
                     return this.checker.typeToString(unionProperty) === 'false' ? ts.factory.createFalse() : ts.factory.createTrue()
                 }
 
-                return this.createLiteral((<any>unionProperty).value)
+                return this.createLiteral((unionProperty as any).value)
             })
 
-            const props: ts.PropertyAssignment[] = []
-
-            props.push(
+            const props: ts.PropertyAssignment[] = [
                 ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
                 ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
-            )
+            ]
 
             return ts.factory.createObjectLiteralExpression(props)
         } else if (primitives) {
             const values: ts.StringLiteral[] = types.map((unionProperty) => {
-                return ts.factory.createStringLiteral((<any>unionProperty).intrinsicName)
+                return ts.factory.createStringLiteral((unionProperty as any).intrinsicName)
             })
 
             return ts.factory.createObjectLiteralExpression([
@@ -356,7 +303,7 @@ class TypeParser {
     }
 
     parseIntersection(type: ts.Type): ts.ObjectLiteralExpression {
-        const intersectionType: ts.UnionOrIntersectionType = <ts.UnionOrIntersectionType>type
+        const intersectionType: ts.UnionOrIntersectionType = type as ts.UnionOrIntersectionType
         const types: ts.ObjectLiteralExpression[] = intersectionType.types.map((intersectionProperty) => {
             return this.parseType(intersectionProperty)
         })
@@ -366,16 +313,16 @@ class TypeParser {
         const unique: string[] = []
         const requiredValues: ts.StringLiteral[] = []
 
-        for (const t of types.reverse()) {
+        for (const t of types.toReversed()) {
             for (const property of t.properties) {
                 if (property.name) {
-                    const identifier = <ts.Identifier>property.name
+                    const identifier = property.name as ts.Identifier
                     if (['properties', 'additionalProperties'].includes(identifier.escapedText.toString())) {
-                        const assignment = <ts.PropertyAssignment>property
-                        const props = <ts.ObjectLiteralExpressionBase<ts.PropertyAssignment>>assignment.initializer
+                        const assignment = property as ts.PropertyAssignment
+                        const props = assignment.initializer as ts.ObjectLiteralExpressionBase<ts.PropertyAssignment>
 
                         for (const prop of props.properties) {
-                            const id: ts.Identifier = <ts.Identifier>prop.name
+                            const id: ts.Identifier = prop.name as ts.Identifier
 
                             // if (!prop.questionToken) {
                             requiredValues.push(ts.factory.createStringLiteral(id.escapedText.toString()))
@@ -395,13 +342,11 @@ class TypeParser {
             }
         }
 
-        const propertyAssignments: ts.PropertyAssignment[] = []
-
-        propertyAssignments.push(
+        const propertyAssignments: ts.PropertyAssignment[] = [
             ts.factory.createPropertyAssignment('required', ts.factory.createArrayLiteralExpression(requiredValues)),
             ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')),
             ts.factory.createPropertyAssignment('properties', ts.factory.createObjectLiteralExpression(combinedProperties)),
-        )
+        ]
 
         if (additionalProperties.length > 0) {
             propertyAssignments.push(
@@ -420,7 +365,7 @@ class TypeParser {
             keyNames.push(prop.escapedName.toString())
         })
 
-        const recordValueType: ts.Type = (<any>properties[0])?.type
+        const recordValueType: ts.Type = (properties[0] as any)?.type
 
         let additionalPropertiesObject: ts.ObjectLiteralExpression = this.parseType(recordValueType)
         const description: ts.PropertyAssignment = ts.factory.createPropertyAssignment(
@@ -473,6 +418,57 @@ class TypeParser {
         ])
     }
 
+    private parseObjectType(objectType: ts.ObjectType, type: ts.Type): ts.ObjectLiteralExpression {
+        if ((this.checker as any).isArrayType(objectType)) {
+            return this.parseArray(objectType as ts.TypeReference)
+        }
+
+        if ((this.checker as any).isTupleType(objectType)) {
+            return this.parseTuple(objectType as ts.TypeReference)
+        }
+
+        const name: string = objectType.symbol?.name
+        if (this.stringTypes.includes(name)) {
+            return ts.factory.createObjectLiteralExpression([
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
+            ])
+        }
+
+        if (name === 'Date') {
+            return ts.factory.createObjectLiteralExpression([
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
+                ts.factory.createPropertyAssignment('format', ts.factory.createStringLiteral('date-time')),
+            ])
+        }
+
+        if (name === 'Buffer') {
+            return ts.factory.createObjectLiteralExpression([
+                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
+                ts.factory.createPropertyAssignment('format', ts.factory.createStringLiteral('binary')),
+            ])
+        }
+
+        const indexInfo =
+            this?.checker?.getIndexInfoOfType(type, ts.IndexKind.Number) || this?.checker?.getIndexInfoOfType(type, ts.IndexKind.String)
+
+        if (indexInfo) {
+            return this.parseIndexedObject(indexInfo)
+        }
+
+        if (this.isExternalPackage(type)) {
+            const external = this.parseTypeFromExternalPackage(type)
+            if (external) {
+                return external
+            }
+        }
+
+        if (this.isRecordWithManyKeys(type)) {
+            return this.parseLongRecord(type)
+        }
+
+        return this.parseInterface(type)
+    }
+
     private isPrimitive(flags: ts.TypeFlags): boolean {
         return (
             Boolean(flags & ts.TypeFlags.StringLike) ||
@@ -500,7 +496,7 @@ class TypeParser {
         }
 
         const properties: ts.Symbol[] = this.checker.getPropertiesOfType(type)
-        const recordValueType: ts.Type = (<any>properties[0])?.type
+        const recordValueType: ts.Type = (properties[0] as any)?.type
 
         return recordValueType && properties.length > 5
     }
@@ -564,7 +560,7 @@ class TypeParser {
             return ts.factory.createTrue()
         } else if (value === 'false') {
             return ts.factory.createFalse()
-            // eslint-disable-next-line regexp/no-unused-capturing-group
+            // eslint-disable-next-line regexp/no-unused-capturing-group, security/detect-unsafe-regex
         } else if (/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(value)) {
             return ts.factory.createNumericLiteral(Number(value))
         } else {

@@ -1,66 +1,128 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { hostname } from 'node:os'
 import path from 'node:path'
+import { performance } from 'node:perf_hooks'
 
-import { AwilixContainer, InjectionMode, NameAndRegistrationPair, asClass, asValue, createContainer, listModules } from 'awilix'
-import { NameFormatter } from 'awilix/lib/load-modules'
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
+import {
+    AwilixContainer,
+    Constructor,
+    InjectionMode,
+    ModuleDescriptor,
+    NameAndRegistrationPair,
+    asClass,
+    asValue,
+    createContainer,
+    listModules,
+} from 'awilix'
+import { LoadedModuleDescriptor, NameFormatter } from 'awilix/lib/load-modules'
 import { camelCase, upperFirst } from 'lodash'
 import { singular } from 'pluralize'
 import type { Class } from 'type-fest'
 
-import { Counter } from '@diia-inhouse/diia-metrics'
+import { Counter, MetricOptions, Observer } from '@diia-inhouse/diia-metrics'
 import { EnvService } from '@diia-inhouse/env'
-import {
-    AlsData,
-    Logger,
-    LoggerConstructor,
-    OnBeforeApplicationShutdown,
-    OnDestroy,
-    OnInit,
-    OnRegistrationsFinished,
-} from '@diia-inhouse/types'
-import { guards } from '@diia-inhouse/utils'
+import { AlsData, Logger, LoggerConstructor, LoggerOptions } from '@diia-inhouse/types'
 
+import { ApplicationHooks } from './applicationHooks'
 import { getBaseDeps } from './baseDeps'
-import { GrpcService } from './grpc'
 import {
     AppConfigType,
     AppDepsType,
     ConfigFactoryFn,
+    ContainerDependency,
     DepsFactoryFn,
     DepsType,
     LoadDepsFromFolderOptions,
+    OnStartHooksResult,
     ServiceContext,
     ServiceOperator,
 } from './interfaces/application'
 import { BaseDeps } from './interfaces/deps'
-import MoleculerService from './moleculer/moleculerWrapper'
+import { NodeEnvLabelsMap, nodeEnvAllowedFields } from './metrics'
 
-export class Application<TContext extends ServiceContext> {
+export class Application<TContext extends ServiceContext> extends ApplicationHooks<TContext> {
+    container?: AwilixContainer<DepsType<TContext>>
+
+    protected asyncCommunicationClasses: Class<unknown>[] = []
+
     private config?: AppConfigType<TContext>
-
-    private container?: AwilixContainer<DepsType<TContext>>
 
     private baseContainer: AwilixContainer<BaseDeps<AppConfigType<TContext>>>
 
     private groupedDepsNames: Record<string, string[]> = {}
 
-    private syncCommunicationClasses = [MoleculerService, GrpcService]
+    private defaultFoldersWithDeps: Record<string, LoadDepsFromFolderOptions> = {
+        actions: { folderName: 'actions', groupName: 'actionList' },
+        tasks: { folderName: 'tasks', groupName: 'taskList' },
+        scheduledTasks: { folderName: 'scheduledTasks', groupName: 'scheduledTaskList' },
+        eventListeners: { folderName: 'eventListeners', groupName: 'eventListenerList' },
+        externalEventListeners: { folderName: 'externalEventListeners', groupName: 'externalEventListenerList' },
+        services: { folderName: 'services' },
+        dataMappers: { folderName: 'dataMappers', nameFormatter: (name) => name },
+        repositories: { folderName: 'repositories', nameFormatter: (name) => `${name}Repository` },
+        views: { folderName: 'views' },
+    }
 
-    private asyncCommunicationClasses: Class<unknown>[] = []
+    private readonly nodeEnvObserver: Observer<NodeEnvLabelsMap>
+
+    private readonly eventLoopUtilizationObserver: Observer<{}>
+
+    private previousEventLoopUtilization: ReturnType<typeof performance.eventLoopUtilization> | undefined
 
     constructor(
         private readonly serviceName: string,
+        private readonly nodeTracerProvider: NodeTracerProvider,
+        loggerOptions: LoggerOptions,
         loggerPkg = '@diia-inhouse/diia-logger',
     ) {
+        super()
         this.baseContainer = createContainer<BaseDeps<AppConfigType<TContext>>>({ injectionMode: InjectionMode.CLASSIC }).register({
             serviceName: asValue(this.serviceName),
+            systemServiceName: asValue(EnvService.getVar('APP_NAME', 'string', null) || this.serviceName),
+            hostName: asValue(EnvService.getVar('POD_NAME', 'string', null) || hostname()),
             envService: asClass(EnvService).singleton(),
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            logger: asClass(<LoggerConstructor>require(loggerPkg).default, {
-                injector: () => ({ options: { logLevel: process.env.LOG_LEVEL } }),
+
+            // prettier-ignore
+            // eslint-disable-next-line security/detect-non-literal-require
+            logger: asClass(require(loggerPkg).default as LoggerConstructor, { // nosemgrep: eslint.detect-non-literal-require
+                injector: () => ({ options: loggerOptions }),
             }).singleton(),
             asyncLocalStorage: asValue(new AsyncLocalStorage<AlsData>()),
         })
+        this.nodeEnvObserver = new Observer<NodeEnvLabelsMap>(
+            'diia_node_env',
+            nodeEnvAllowedFields,
+            'Indicates the NODE_ENV environment value',
+            {
+                onCollect: (): ReturnType<Required<MetricOptions<NodeEnvLabelsMap>>['onCollect']> => ({
+                    labels: { env: this.baseContainer.resolve('envService').getEnv() },
+                    value: 1,
+                }),
+            },
+        )
+        this.eventLoopUtilizationObserver = new Observer<{}>(
+            'diia_node_event_loop_utilization_ratio',
+            undefined,
+            'Indicates the event loop utilization ratio',
+            {
+                onCollect: (): ReturnType<Required<MetricOptions<{}>>['onCollect']> => {
+                    const currentUtilization = performance.eventLoopUtilization()
+
+                    if (this.previousEventLoopUtilization === undefined) {
+                        this.previousEventLoopUtilization = currentUtilization
+
+                        return { labels: {}, value: 0 }
+                    }
+
+                    const deltaUtilization = performance.eventLoopUtilization(this.previousEventLoopUtilization)
+
+                    this.previousEventLoopUtilization = currentUtilization
+
+                    return { labels: {}, value: deltaUtilization.utilization }
+                },
+            },
+        )
     }
 
     async setConfig(factory: ConfigFactoryFn<AppConfigType<TContext>>): Promise<this> {
@@ -101,15 +163,19 @@ export class Application<TContext extends ServiceContext> {
 
         this.container = this.baseContainer
             .createScope<AppDepsType<TContext>>()
-            .register(<NameAndRegistrationPair<DepsType<TContext>>>appDeps)
+            .register(appDeps as NameAndRegistrationPair<DepsType<TContext>>)
 
         return this
     }
 
-    async initialize(): Promise<ServiceOperator<AppConfigType<TContext>, DepsType<TContext>>> {
+    async initialize(dependencies?: ContainerDependency[]): Promise<ServiceOperator<AppConfigType<TContext>, DepsType<TContext>>> {
         this.setOnShutDownHook()
 
-        await this.loadDefaultDepsFolders()
+        if (dependencies?.length) {
+            this.registerDependencies(dependencies)
+        } else {
+            await this.loadDefaultDepsFolders()
+        }
 
         const ctx = this.createContext()
 
@@ -120,12 +186,12 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
-    defaultNameFormatter(folderName: string): NameFormatter {
+    defaultNameFormatter(folderName: string, depsDir?: string): NameFormatter {
         return (_, descriptor) => {
             const parsedPath = path.parse(descriptor.path)
             const fileName = parsedPath.name
             const dependencyPath = parsedPath.dir
-                .split(`${this.getDepsDir()}${path.sep}${folderName}`)[1]
+                .split(`${depsDir ?? this.getDepsDir()}${path.sep}${folderName}`)[1]
                 .split(path.sep)
                 .map((p) => upperFirst(p))
 
@@ -139,20 +205,64 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
-    async loadDepsFromFolder(options: LoadDepsFromFolderOptions): Promise<this> {
-        const { folderName, fileMask = '**/*.js', nameFormatter = this.defaultNameFormatter(folderName), groupName } = options
+    extractDepsFromFolder(options: LoadDepsFromFolderOptions): ModuleDescriptor[] {
+        const { folderName, depsDir } = options
+        let fileMask = options.fileMask ?? '**/*.js'
 
-        const directory = `${this.getDepsDir()}/${folderName}/${fileMask}`
-        const modules = listModules(directory)
+        if (folderName === 'repositories') {
+            const adapter = this.container?.resolve('databaseAdapter')
 
-        if (groupName) {
-            if (!Object.keys(this.baseContainer.registrations).includes(groupName)) {
-                this.baseContainer.register(groupName, asValue([]))
-            }
-
-            this.groupedDepsNames[groupName] = this.groupedDepsNames[groupName] || []
+            fileMask = `{*.js,${adapter}/**/*.js}`
         }
 
+        const directory = `${depsDir ?? this.getDepsDir()}/${folderName}/${fileMask}`
+        const modules = listModules(directory)
+
+        return modules
+    }
+
+    async extractDependenciesFromModules(
+        modules: Record<string, Record<string, () => Promise<unknown>>>,
+        depsDir: string,
+    ): Promise<ContainerDependency[]> {
+        modules = this.filterRepositoryModulesByAdapter(modules)
+
+        const unwrappedModules: { folderName: string; filePath: string; file: () => Promise<unknown> }[] = []
+        for (const [folderName, files] of Object.entries(modules)) {
+            for (const [filePath, file] of Object.entries(files)) {
+                unwrappedModules.push({ folderName, filePath, file })
+            }
+        }
+
+        const dependencies: ContainerDependency[] = []
+        for (const dep of unwrappedModules) {
+            const { folderName, filePath, file } = dep
+            const options = this.defaultFoldersWithDeps[folderName] ?? { folderName }
+
+            const { groupName, nameFormatter = this.defaultNameFormatter(folderName, depsDir) } = options
+            const { name } = path.parse(filePath)
+            const registrationName = nameFormatter(name, { path: filePath } as LoadedModuleDescriptor)
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const module: any = await file()
+
+            const defaultExport = module.default?.default ?? module.default
+
+            dependencies.push({ groupName: groupName, registrationName, dependency: defaultExport })
+        }
+
+        return dependencies
+    }
+
+    async loadDepsFromFolder(options: LoadDepsFromFolderOptions): Promise<this> {
+        const { folderName, depsDir, nameFormatter = this.defaultNameFormatter(folderName, depsDir), groupName } = options
+        const modules = this.extractDepsFromFolder(options)
+
+        if (groupName) {
+            this.registerGroup(groupName)
+        }
+
+        const dependencies: ContainerDependency[] = []
         for (const module of modules) {
             const { name, path: modulePath } = module
             const registrationName = nameFormatter(name, { ...module, value: '' })
@@ -160,29 +270,62 @@ export class Application<TContext extends ServiceContext> {
             const defaultExport = dependency.default?.default ?? dependency.default
 
             if (typeof defaultExport === 'function') {
-                this.baseContainer.register(
-                    registrationName,
-                    asClass(defaultExport, {
-                        injector: (c) => {
-                            const logger = c.resolve<Logger>('logger')
-                            const childLogger = logger.child?.({ regName: registrationName })
-
-                            return { logger: childLogger ?? logger }
-                        },
-                    }).singleton(),
-                )
-
-                if (groupName) {
-                    this.groupedDepsNames[groupName].push(registrationName)
-                }
+                dependencies.push({ groupName, registrationName, dependency: defaultExport })
             }
         }
+
+        this.registerDependencies(dependencies)
 
         return this
     }
 
+    private registerDependency(dependency: Constructor<object>, registrationName: string, groupName: string | undefined): void {
+        this.baseContainer.register(
+            registrationName,
+            asClass(dependency, {
+                injector: (c) => {
+                    const logger = c.resolve<Logger>('logger')
+                    const childLogger = logger.child?.({ regName: registrationName })
+
+                    return { logger: childLogger ?? logger }
+                },
+            }).singleton(),
+        )
+
+        if (groupName) {
+            this.groupedDepsNames[groupName].push(registrationName)
+        }
+    }
+
+    private registerGroup(groupName: string): void {
+        if (!Object.keys(this.baseContainer.registrations).includes(groupName)) {
+            this.baseContainer.register(groupName, asValue([]))
+        }
+
+        this.groupedDepsNames[groupName] = this.groupedDepsNames[groupName] || []
+    }
+
     private getDepsDir(): string {
         return path.resolve(this.config?.depsDir ?? 'dist')
+    }
+
+    private registerDependencies(dependencies: ContainerDependency[]): void {
+        for (const dependency of dependencies) {
+            const { dependency: defaultExport, groupName, registrationName } = dependency
+
+            if (groupName) {
+                this.registerGroup(groupName)
+            }
+
+            if (typeof defaultExport === 'function') {
+                this.registerDependency(defaultExport, registrationName, groupName)
+            }
+        }
+
+        const groupsToRegister = Object.values(this.defaultFoldersWithDeps).filter(({ groupName }) => groupName)
+        for (const { groupName } of groupsToRegister) {
+            this.registerGroup(groupName!)
+        }
     }
 
     private async getBaseDeps(): Promise<NameAndRegistrationPair<BaseDeps<AppConfigType<TContext>>>> {
@@ -200,110 +343,9 @@ export class Application<TContext extends ServiceContext> {
         return await getBaseDeps(config)
     }
 
-    private async start(): Promise<void> {
-        await this.resolveDeps()
-    }
-
-    private async stop(): Promise<void> {
+    private async start(): Promise<OnStartHooksResult> {
         if (!this.container) {
-            throw new Error('Container should be initialized before stopping')
-        }
-
-        const registeredInstances = Object.keys(this.container.registrations)
-        const logger = this.container.resolve('logger')
-        const destroyOrder: OnDestroy[][] = []
-        const onBeforeAppShutdownInstances: OnBeforeApplicationShutdown[] = []
-        for (const name of registeredInstances) {
-            const instance = this.container.resolve(name)
-            if (guards.hasOnDestroyHook(instance)) {
-                const order = this.getOnDestroyOrder(instance)
-
-                destroyOrder[order] ??= []
-                destroyOrder[order].push(instance)
-            }
-
-            if (guards.hasOnBeforeApplicationShutdownHook(instance)) {
-                onBeforeAppShutdownInstances.push(instance)
-            }
-        }
-
-        const onDestroyErrors: Error[] = []
-        for (const [order, instancesWithOnDestroyHook = []] of destroyOrder.entries()) {
-            const onDestroyTasks = instancesWithOnDestroyHook.map(async (instance) => {
-                try {
-                    await instance.onDestroy()
-                    logger.info(`[onDestroy:${order}] Finished ${instance.constructor.name} destruction`)
-                } catch (err) {
-                    logger.error(`[onDestroy:${order}] Failed ${instance.constructor.name} destruction`, { err })
-                    throw err
-                }
-            })
-            const errors = await this.runHookTasks(onDestroyTasks)
-
-            onDestroyErrors.push(...errors)
-        }
-
-        const onBeforeAppShutdownTasks = onBeforeAppShutdownInstances.map(async (instance) => {
-            try {
-                await instance.onBeforeApplicationShutdown()
-                logger.info(`[onBeforeAppShutdown] Finished ${instance.constructor.name} destruction`)
-            } catch (err) {
-                logger.error(`[onBeforeAppShutdown] Failed ${instance.constructor.name} destruction`, { err })
-                throw err
-            }
-        })
-
-        const onBeforeAppShutdownErrors = await this.runHookTasks(onBeforeAppShutdownTasks)
-        if (onDestroyErrors.length > 0 || onBeforeAppShutdownErrors.length > 0) {
-            throw new AggregateError(onDestroyErrors.concat(onBeforeAppShutdownErrors), 'Failed to stop service')
-        }
-    }
-
-    private async runHookTasks(tasks: Promise<void>[]): Promise<Error[]> {
-        const results = await Promise.allSettled(tasks)
-
-        return results.filter(guards.isSettledError).map((err) => new Error(err.reason))
-    }
-
-    private async loadDefaultDepsFolders(): Promise<void> {
-        await this.loadDepsFromFolder({
-            folderName: 'actions',
-            groupName: 'actionList',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'tasks',
-            groupName: 'taskList',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'scheduledTasks',
-            groupName: 'scheduledTaskList',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'eventListeners',
-            groupName: 'eventListenerList',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'externalEventListeners',
-            groupName: 'externalEventListenerList',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'services',
-        })
-
-        await this.loadDepsFromFolder({
-            folderName: 'dataMappers',
-            nameFormatter: (name): string => name,
-        })
-    }
-
-    private async resolveDeps(): Promise<void> {
-        if (!this.container) {
-            throw new Error('Container should be initialized before deps resolving')
+            throw new Error('Container should be initialized before start')
         }
 
         for (const [aggregateName, moduleNames] of Object.entries(this.groupedDepsNames)) {
@@ -314,62 +356,25 @@ export class Application<TContext extends ServiceContext> {
             }
         }
 
-        const registeredObjects = Object.keys(this.container.registrations)
-        const logger = this.container.resolve('logger')
-        const initOrder: [OnInit[], OnInit[], OnInit[], OnInit[]] = [[], [], [], []]
-        const registrationsFinishedHooks: OnRegistrationsFinished[] = []
+        return await this.runOnStartHooks()
+    }
 
-        for (const name of registeredObjects) {
-            const instance = this.container.resolve(name)
-            if (guards.hasOnInitHook(instance)) {
-                const order = this.getOnInitOrder(instance)
-
-                initOrder[order].push(instance)
+    private async stop(): Promise<void> {
+        try {
+            await this.runOnStopHooks()
+        } finally {
+            try {
+                await this.nodeTracerProvider.forceFlush()
+            } catch (err) {
+                this.baseContainer?.resolve('logger').error('Failed to flush tracer', { err })
             }
-
-            if (guards.hasOnRegistrationsFinishedHook(instance)) {
-                registrationsFinishedHooks.push(instance)
-            }
-        }
-
-        await Promise.all(
-            registrationsFinishedHooks.map(async (instance) => {
-                await instance.onRegistrationsFinished()
-                logger.info(`[onRegistrationsFinished] Finished ${instance.constructor.name}`)
-            }),
-        )
-
-        for (const [order, instancesWithOnInitHook] of initOrder.entries()) {
-            await Promise.all(
-                instancesWithOnInitHook.map(async (instance) => {
-                    await instance.onInit()
-
-                    logger.info(`[onInit:${order}] Finished ${instance.constructor.name} initialization`)
-                }),
-            )
         }
     }
 
-    private getOnInitOrder(instance: object): 0 | 1 | 2 | 3 {
-        if (instance.constructor.name === EnvService.name) {
-            return 0
+    private async loadDefaultDepsFolders(): Promise<void> {
+        for (const config of Object.values(this.defaultFoldersWithDeps)) {
+            await this.loadDepsFromFolder(config)
         }
-
-        if (this.syncCommunicationClasses.some((item) => instance.constructor.name === item.name)) {
-            return 2
-        }
-
-        if (this.asyncCommunicationClasses.some((item) => instance.constructor.name === item.name)) {
-            return 3
-        }
-
-        return 1
-    }
-
-    private getOnDestroyOrder(instance: OnDestroy): number {
-        const onInitOrder = this.getOnInitOrder(instance)
-
-        return Math.abs(onInitOrder - 3)
     }
 
     private createContext(): ServiceContext<AppConfigType<TContext>, DepsType<TContext>> {
@@ -383,30 +388,54 @@ export class Application<TContext extends ServiceContext> {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+    private filterRepositoryModulesByAdapter(modules: Record<string, Record<string, () => Promise<unknown>>>) {
+        if (!modules.repositories) {
+            return modules
+        }
+
+        const databaseAdapter = this.container?.resolve('databaseAdapter')
+        const filteredRepositories = Object.entries(modules.repositories).filter(([filePath]) => {
+            const isInRepositoriesFolder = filePath.includes('/repositories/')
+            const isInSubfolder = filePath.match(/\/repositories\/[^/]+\//)
+            const isInDatabaseAdapterFolder = filePath.includes(`/repositories/${databaseAdapter}/`)
+
+            return isInRepositoriesFolder && (!isInSubfolder || isInDatabaseAdapterFolder)
+        })
+
+        modules.repositories = Object.fromEntries(filteredRepositories)
+
+        return modules
+    }
+
     private setOnShutDownHook(): void {
         const listenTerminationSignals = this.config?.listenTerminationSignals ?? true
         if (listenTerminationSignals) {
-            process.on('SIGINT', (err) => this.onShutDown('On SIGINT shutdown', err))
-            process.on('SIGQUIT', (err) => this.onShutDown('On SIGQUIT shutdown', err))
-            process.on('SIGTERM', (err) => this.onShutDown('On SIGTERM shutdown', err))
+            process.on('SIGINT', (signal) => this.onShutDown(`On ${signal} shutdown`))
+            process.on('SIGQUIT', (signal) => this.onShutDown(`On ${signal} shutdown`))
+            process.on('SIGTERM', (signal) => this.onShutDown(`On ${signal} shutdown`))
         }
 
-        const UncaughtExceptionMetric = new Counter('uncaught_exceptions_total')
+        const UncaughtExceptionMetric = new Counter('uncaught_exceptions_total', [], 'Indicates the number of uncaught exceptions', {
+            registry: this.baseContainer.resolve('metrics').pushGatewayRegistry,
+        })
 
         process.on('uncaughtException', async (err) => {
             UncaughtExceptionMetric.increment({})
-            await this.onShutDown('On uncaughtException shutdown', err)
+            this.baseContainer?.resolve('logger').error('On uncaughtException', { err })
         })
 
-        const UnhandledRejectionMetric = new Counter('unhandled_rejections_total')
+        const UnhandledRejectionMetric = new Counter('unhandled_rejections_total', [], 'Indicates the number of unhandled rejections', {
+            registry: this.baseContainer.resolve('metrics').pushGatewayRegistry,
+        })
 
         process.on('unhandledRejection', async (err: Error) => {
             UnhandledRejectionMetric.increment({})
-            await this.onShutDown('On unhandledRejection shutdown', err)
+            this.baseContainer?.resolve('logger').error('On unhandledRejection', { err })
         })
     }
 
-    private async onShutDown(msg: string, error: unknown): Promise<void> {
+    private async onShutDown(msg: string, error?: unknown): Promise<void> {
         if (error) {
             this.baseContainer?.resolve('logger').error(msg, { err: error })
         } else {
@@ -419,7 +448,7 @@ export class Application<TContext extends ServiceContext> {
             this.baseContainer?.resolve('logger').error('Failed to stop service. Shutdown completed', { err })
         }
 
-        // eslint-disable-next-line n/no-process-exit, unicorn/no-process-exit
+        // eslint-disable-next-line unicorn/no-process-exit
         setImmediate(() => process.exit(error ? 1 : 0))
     }
 }

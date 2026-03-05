@@ -7,10 +7,29 @@ import type { IgnoreIncomingRequestFunction } from '@opentelemetry/instrumentati
 import { Resource } from '@opentelemetry/resources'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
-import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
+import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 import { merge } from 'lodash'
 
-import { OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing'
+import { EnvService } from '@diia-inhouse/env'
+
+import { ATTR_K8S_POD_NAME, OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing'
+
+let activitiesModule:
+    | {
+          activityInfo(): {
+              workflowExecution?: { workflowId?: string; runId?: string }
+              activityId?: string
+              activityType?: string
+              attempt?: number
+          }
+      }
+    | undefined
+
+try {
+    activitiesModule = require('@diia-inhouse/workflow/activity')
+} catch {
+    // Module is not available, activitiesModule remains undefined
+}
 
 export function getIgnoreIncomingRequestHook(paths: string[] = []): IgnoreIncomingRequestFunction {
     const ignoreIncomingPaths = new Set(['/metrics', '/ready', '/start', '/live'].concat(paths))
@@ -21,6 +40,26 @@ export function getIgnoreIncomingRequestHook(paths: string[] = []): IgnoreIncomi
         }
 
         return ignoreIncomingPaths.has(url)
+    }
+}
+
+function enrichLogRecordWithActivityInfo(record: Record<string, unknown>): void {
+    if (!activitiesModule) {
+        return
+    }
+
+    try {
+        const activity = activitiesModule.activityInfo()
+
+        if (activity) {
+            record.workflowId = activity.workflowExecution?.workflowId
+            record.runId = activity.workflowExecution?.runId
+            record.activityId = activity.activityId
+            record.activityType = activity.activityType
+            record.attempt = activity.attempt
+        }
+    } catch {
+        // Silently ignore errors when activities aren't available
     }
 }
 
@@ -71,6 +110,11 @@ const defaultConfig: OpentelemetryTracingConfig = {
                 }
             },
         },
+        '@opentelemetry/instrumentation-pino': {
+            logHook: (_, record) => {
+                enrichLogRecordWithActivityInfo(record)
+            },
+        },
     },
     debug: process.env.TRACING_DEBUG_ENABLED ? process.env.TRACING_DEBUG_ENABLED === 'true' : false,
     exporter: {
@@ -78,13 +122,15 @@ const defaultConfig: OpentelemetryTracingConfig = {
     },
 }
 
-export function initTracing(serviceName: string, override?: OpentelemetryTracingConfig): void {
+export function initTracing(override?: OpentelemetryTracingConfig): NodeTracerProvider {
     const config = {
         ...defaultConfig,
         ...override,
         instrumentations: merge(defaultConfig.instrumentations, override?.instrumentations),
     }
 
+    const systemServiceName = override?.appName || EnvService.getVar('APP_NAME', 'string', null)
+    const podName = override?.hostname || EnvService.getVar('POD_NAME', 'string', null)
     const instrumentations = getNodeAutoInstrumentations(config.instrumentations)
 
     registerInstrumentations({
@@ -97,21 +143,26 @@ export function initTracing(serviceName: string, override?: OpentelemetryTracing
 
     const resource = Resource.default().merge(
         new Resource({
-            [SEMRESATTRS_SERVICE_NAME]: serviceName,
+            [ATTR_SERVICE_NAME]: systemServiceName,
+            [ATTR_K8S_POD_NAME]: podName,
         }),
     )
 
-    const provider = new NodeTracerProvider({ resource })
+    const spanProcessors = []
 
     if (config.enabled) {
         const exporter = new OTLPTraceExporter(config.exporter)
 
-        provider.addSpanProcessor(new BatchSpanProcessor(exporter))
+        spanProcessors.push(new BatchSpanProcessor(exporter))
     }
 
     if (config.debug) {
-        provider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()))
+        spanProcessors.push(new SimpleSpanProcessor(new ConsoleSpanExporter()))
     }
 
+    const provider = new NodeTracerProvider({ resource, spanProcessors })
+
     provider.register()
+
+    return provider
 }

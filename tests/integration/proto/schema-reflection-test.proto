@@ -1,0 +1,279 @@
+syntax = "proto3";
+
+package ua.gov.diia.test.schema;
+
+// Note: google/api/annotations.proto is not imported here because of extension
+// conflicts in test mode.
+
+option java_multiple_files = true;
+option java_package = "ua.gov.diia.test.schema";
+
+// Test service for schema reflection
+service SchemaTestService {
+  // Get user by ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {};
+
+  // Create a new user
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {};
+
+  // Update user data
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse) {};
+
+  // Delete a user
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {};
+
+  // Internal method without HTTP mapping
+  rpc InternalProcess(InternalProcessRequest) returns (InternalProcessResponse) {};
+}
+
+// Second service for testing multiple services
+service AdminService {
+  // List all users
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {};
+
+  // Ban a user
+  rpc BanUser(BanUserRequest) returns (BanUserResponse) {};
+}
+
+// Request to get user by ID
+message GetUserRequest {
+  // User ID in UUID format
+  string id = 1;
+  // Include profile
+  optional bool include_profile = 2;
+}
+
+// Response with user data
+message GetUserResponse {
+  // The user
+  User user = 1;
+  // Timestamp
+  int64 timestamp = 2;
+}
+
+// User entity
+// @see https://docs.example.com/user
+message User {
+  // Unique identifier
+  string id = 1;
+  // User's email address
+  string email = 2;
+  // Full name
+  string name = 3;
+  // Status
+  UserStatus status = 4;
+  // Profile
+  optional UserProfile profile = 5;
+  // Roles
+  repeated UserRole roles = 6;
+  // Account creation date in DD.MM.YYYY format
+  string created_at = 7;
+  // Addresses
+  repeated Address addresses = 8;
+  // Metadata (map type)
+  map<string, string> metadata = 9;
+  // Tag counts (map type)
+  map<string, int32> tag_counts = 10;
+}
+
+// User status enumeration
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+  USER_STATUS_SUSPENDED = 3;
+}
+
+// User profile
+message UserProfile {
+  optional string phone = 1;
+  optional string avatar_url = 2;
+  // Settings
+  ProfileSettings settings = 3;
+  // Nested metadata
+  ProfileMetadata metadata = 4;
+}
+
+// Profile settings
+message ProfileSettings {
+  bool notifications_enabled = 1;
+  string language = 2;
+  optional string timezone = 3;
+}
+
+// Profile metadata (deeply nested)
+message ProfileMetadata {
+  int64 last_login = 1;
+  int32 login_count = 2;
+  repeated DeviceInfo devices = 3;
+}
+
+// Device info
+message DeviceInfo {
+  string device_id = 1;
+  DeviceType device_type = 2;
+  int64 last_active = 3;
+}
+
+// Device type enum
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_MOBILE = 1;
+  DEVICE_TYPE_DESKTOP = 2;
+  DEVICE_TYPE_TABLET = 3;
+}
+
+// User role
+message UserRole {
+  string name = 1;
+  repeated string permissions = 2;
+}
+
+// Address
+message Address {
+  AddressType type = 1;
+  string street = 2;
+  string city = 3;
+  string postal_code = 4;
+  string country = 5;
+}
+
+// Address type enum
+enum AddressType {
+  ADDRESS_TYPE_UNSPECIFIED = 0;
+  ADDRESS_TYPE_HOME = 1;
+  ADDRESS_TYPE_WORK = 2;
+  ADDRESS_TYPE_BILLING = 3;
+}
+
+// Create user request
+message CreateUserRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+  optional UserProfile profile = 4;
+}
+
+// Create user response
+message CreateUserResponse {
+  User user = 1;
+  bool success = 2;
+}
+
+// Update user request
+message UpdateUserRequest {
+  string id = 1;
+  optional string email = 2;
+  optional string name = 3;
+  optional UserStatus status = 4;
+  optional UserProfile profile = 5;
+}
+
+// Update user response
+message UpdateUserResponse {
+  User user = 1;
+  repeated string updated_fields = 2;
+}
+
+// Delete user request
+message DeleteUserRequest {
+  string id = 1;
+  optional bool soft_delete = 2;
+}
+
+// Delete user response
+message DeleteUserResponse {
+  bool success = 1;
+  int64 deleted_at = 2;
+}
+
+// Internal process request
+message InternalProcessRequest {
+  // Process type
+  string type = 1;
+  // Process data as bytes
+  bytes data = 2;
+  // Numeric parameters
+  repeated double params = 3;
+}
+
+// Internal process response
+message InternalProcessResponse {
+  int32 result_code = 1;
+  string message = 2;
+}
+
+// List users request
+message ListUsersRequest {
+  int32 page = 1;
+  int32 per_page = 2;
+  optional UserStatus status_filter = 3;
+}
+
+// List users response
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+}
+
+// Ban user request
+message BanUserRequest {
+  string user_id = 1;
+  string reason = 2;
+  int64 duration_seconds = 3;
+}
+
+// Ban user response
+message BanUserResponse {
+  bool success = 1;
+  int64 ban_expires_at = 2;
+}
+
+// Oneof test message
+message NotificationRequest {
+  string id = 1;
+
+  // Target (oneof)
+  oneof target {
+    string user_id = 2;
+    string group_id = 3;
+    bool broadcast = 4;
+  }
+
+  // Content (oneof)
+  oneof content {
+    string text = 5;
+    string html = 6;
+    TemplateRef template = 7;
+  }
+}
+
+// Template reference
+message TemplateRef {
+  string template_id = 1;
+  map<string, string> variables = 2;
+}
+
+// Self-referencing message (circular)
+message TreeNode {
+  string id = 1;
+  string value = 2;
+  optional TreeNode parent = 3;
+  repeated TreeNode children = 4;
+}
+
+// Circular reference - Category
+message Category {
+  string id = 1;
+  string name = 2;
+  repeated Product products = 3;
+  repeated Category subcategories = 4;
+}
+
+// Circular reference - Product
+message Product {
+  string id = 1;
+  string name = 2;
+  double price = 3;
+  Category category = 4;
+}

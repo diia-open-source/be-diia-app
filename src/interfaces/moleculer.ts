@@ -1,3 +1,3 @@
 export interface ContextMeta {
-    tracing: object
+    tracing?: { [key: string]: string }
 }

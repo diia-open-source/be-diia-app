@@ -24,9 +24,8 @@ function before(program: ts.Program): ts.Transformer<any> {
     }
 }
 
-function transformer() {
-    return (sf: ts.SourceFile): ts.SourceFile => sf
-}
+// eslint-disable-next-line unicorn/consistent-function-scoping
+const transformer = (): ts.Transformer<ts.SourceFile> => (sf) => sf
 
 export default function (program: ts.Program): ts.Transformer<any> {
     return process.env.NODE_ENV === Env.Prod ? transformer : before(program)

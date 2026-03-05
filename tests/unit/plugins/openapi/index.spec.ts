@@ -5,7 +5,7 @@ import { Env } from '@diia-inhouse/env'
 import openApiPlugin from '../../../../src/plugins/openapi'
 import ActionVisitor from '../../../../src/plugins/openapi/actionVisitor'
 
-jest.mock('../../../../src/plugins/openapi/actionVisitor')
+vi.mock('../../../../src/plugins/openapi/actionVisitor')
 
 describe('OpenApi plugin', () => {
     it('should call action visitor', () => {
@@ -15,9 +15,9 @@ describe('OpenApi plugin', () => {
         const ctx = {}
         const program = {}
 
-        jest.spyOn(ActionVisitor, 'visit').mockReturnValueOnce(<ReturnType<typeof ts.visitNode>>(<unknown>sourceFile))
+        vi.spyOn(ActionVisitor, 'visit').mockReturnValueOnce(sourceFile as unknown as ReturnType<typeof ts.visitNode>)
 
-        const result = openApiPlugin(<ts.Program>program)(ctx)(sourceFile)
+        const result = openApiPlugin(program as ts.Program)(ctx)(sourceFile)
 
         expect(ActionVisitor.visit).toHaveBeenCalledWith(sourceFile, ctx, program)
         expect(result).toBe(sourceFile)
@@ -30,7 +30,9 @@ describe('OpenApi plugin', () => {
         const ctx = {}
         const program = {}
 
-        const result = openApiPlugin(<ts.Program>program)(ctx)(sourceFile)
+        vi.spyOn(ActionVisitor, 'visit')
+
+        const result = openApiPlugin(program as ts.Program)(ctx)(sourceFile)
 
         expect(ActionVisitor.visit).toHaveBeenCalledTimes(0)
         expect(result).toBe(sourceFile)
@@ -43,7 +45,9 @@ describe('OpenApi plugin', () => {
         const ctx = {}
         const program = {}
 
-        const result = openApiPlugin(<ts.Program>program)(ctx)(sourceFile)
+        vi.spyOn(ActionVisitor, 'visit')
+
+        const result = openApiPlugin(program as ts.Program)(ctx)(sourceFile)
 
         expect(ActionVisitor.visit).toHaveBeenCalledTimes(0)
         expect(result).toBe(sourceFile)

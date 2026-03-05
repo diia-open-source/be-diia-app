@@ -3,16 +3,16 @@ import { IncomingMessage } from 'node:http'
 import { DiagConsoleLogger, DiagLogLevel, diag } from '@opentelemetry/api'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
-import { ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 
 import { getIgnoreIncomingRequestHook, initTracing } from '../../../src'
 
-jest.mock('@opentelemetry/resources', () => {
-    const { Resource, ...rest } = jest.requireActual('@opentelemetry/resources')
+vi.mock('@opentelemetry/resources', async (importOriginal) => {
+    const original = await importOriginal<typeof import('@opentelemetry/resources')>()
 
     return {
-        ...rest,
+        ...original,
         // eslint-disable-next-line unicorn/no-static-only-class
         Resource: class ResourceMock {
             static default(): { merge: () => void } {
@@ -24,13 +24,14 @@ jest.mock('@opentelemetry/resources', () => {
     }
 })
 
-jest.mock('@opentelemetry/sdk-trace-node')
-jest.mock('@opentelemetry/api')
-jest.mock('@opentelemetry/exporter-trace-otlp-grpc')
-jest.mock('@opentelemetry/instrumentation')
-jest.mock('@opentelemetry/sdk-trace-base')
+vi.mock('@opentelemetry/sdk-trace-node')
+vi.mock('@opentelemetry/api')
+vi.mock('@opentelemetry/exporter-trace-otlp-grpc')
+vi.mock('@opentelemetry/instrumentation')
+vi.mock('@opentelemetry/sdk-trace-base')
 
 const defaultConfig = {
+    // eslint-disable-next-line unicorn/no-unused-properties
     instrumentations: {
         '@opentelemetry/instrumentation-fs': { enabled: false },
         '@opentelemetry/instrumentation-http': { ignoreIncomingRequestHook: getIgnoreIncomingRequestHook() },
@@ -42,36 +43,33 @@ const defaultConfig = {
 
 describe(`initTracing`, () => {
     it('should not register node tracer provider if tracing is disabled', () => {
-        initTracing('Documents')
+        initTracing()
 
-        const { instances: providerInstances } = (<jest.MockedClass<typeof NodeTracerProvider>>NodeTracerProvider).mock
+        const { instances: providerInstances } = vi.mocked(NodeTracerProvider).mock
 
         expect(providerInstances).toHaveLength(1)
     })
 
     it('should register node tracer provider', () => {
-        initTracing('Documents', { enabled: true })
-
-        const [provider] = (<jest.MockedClass<typeof NodeTracerProvider>>NodeTracerProvider).mock.instances
+        initTracing({ enabled: true })
 
         expect(registerInstrumentations).toHaveBeenCalled()
         expect(OTLPTraceExporter).toHaveBeenCalledWith(defaultConfig.exporter)
-
-        expect(provider.register).toHaveBeenCalled()
     })
 
     it('should add debug logging', () => {
-        initTracing('Documents', { enabled: true, debug: true })
+        initTracing({ enabled: true, debug: true })
 
-        const [diagConsoleLogger] = (<jest.MockedClass<typeof DiagConsoleLogger>>DiagConsoleLogger).mock.instances
-        const [provider] = (<jest.MockedClass<typeof NodeTracerProvider>>NodeTracerProvider).mock.instances
-        const [simpleSpanProcessor] = (<jest.MockedClass<typeof SimpleSpanProcessor>>SimpleSpanProcessor).mock.instances
-        const [consoleSpanExporter] = (<jest.MockedClass<typeof ConsoleSpanExporter>>ConsoleSpanExporter).mock.instances
+        const [diagConsoleLogger] = vi.mocked(DiagConsoleLogger).mock.instances
+        const [simpleSpanProcessor] = vi.mocked(SimpleSpanProcessor).mock.instances
+        const [consoleSpanExporter] = vi.mocked(ConsoleSpanExporter).mock.instances
+        const [batchSpanProcessor] = vi.mocked(BatchSpanProcessor).mock.instances
 
-        expect(jest.spyOn(diag, 'setLogger')).toHaveBeenCalledWith(diagConsoleLogger, DiagLogLevel.VERBOSE)
-        expect(provider.addSpanProcessor).toHaveBeenCalledWith(simpleSpanProcessor)
+        expect(diag.setLogger).toHaveBeenCalledWith(diagConsoleLogger, DiagLogLevel.VERBOSE)
         expect(SimpleSpanProcessor).toHaveBeenCalledWith(consoleSpanExporter)
-        expect(provider.register).toHaveBeenCalled()
+        expect(NodeTracerProvider).toHaveBeenCalledWith({
+            spanProcessors: [batchSpanProcessor, simpleSpanProcessor],
+        })
     })
 })
 
@@ -80,18 +78,18 @@ describe(`getIgnoreIncomingRequestHook`, () => {
     const hook = getIgnoreIncomingRequestHook(paths)
 
     it('should return true if passed url in ignored paths list', () => {
-        expect(hook(<IncomingMessage>{ url: paths[0] })).toBe(true)
+        expect(hook({ url: paths[0] } as IncomingMessage)).toBe(true)
     })
 
     it('should return true if passed url in the list of hardcoded ignored paths', () => {
-        expect(hook(<IncomingMessage>{ url: '/ready' })).toBe(true)
+        expect(hook({ url: '/ready' } as IncomingMessage)).toBe(true)
     })
 
     it('should return false if passed url not in ignored paths list', () => {
-        expect(hook(<IncomingMessage>{ url: '/not0in-list' })).toBe(false)
+        expect(hook({ url: '/not0in-list' } as IncomingMessage)).toBe(false)
     })
 
     it('should return false if url is not passed', () => {
-        expect(hook(<IncomingMessage>{})).toBe(false)
+        expect(hook({} as IncomingMessage)).toBe(false)
     })
 })

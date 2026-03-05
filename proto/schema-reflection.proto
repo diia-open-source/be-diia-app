@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package diia.schema.v1;
+
+service SchemaReflection {
+    rpc GetSchemas(GetSchemasRequest) returns (ServiceSchemaResponse);
+}
+
+message GetSchemasRequest {}
+
+message ServiceSchemaResponse {
+    string serviceName = 1;
+    string version = 2;
+    repeated ActionSchema actions = 3;
+    string definitionsJson = 4;  // Shared JSON Schema definitions for all actions
+}
+
+message ActionSchema {
+    string name = 1;
+    string grpcMethod = 2;
+    string sessionType = 3;
+    string requestSchemaJson = 4;
+    string responseSchemaJson = 5;
+    HttpMapping httpMapping = 6;
+    string description = 7;
+    bool requestStream = 8;
+    bool responseStream = 9;
+    string requestTypeName = 10;
+    string responseTypeName = 11;
+}
+
+message HttpMapping {
+    string method = 1;
+    string path = 2;
+}

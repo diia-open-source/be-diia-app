@@ -9,6 +9,7 @@ option java_package = "ua.gov.diia.test";
 
 service Test {
   rpc GetTest(GetTestReq) returns (GetTestRes) {};
+  rpc GetTestWithCtx(GetTestReq) returns (GetTestRes) {};
   rpc ThrowError(ThrowErrorReq) returns (GetTestRes) {};
   rpc LockResource(LockResourceReq) returns (GetTestRes) {};
 }
@@ -17,9 +18,25 @@ service TestPrivate {
   rpc GetTestPrivate(GetTestReq) returns (GetTestRes) {};
 }
 
-message GetTestReq { int32 timeoutMs = 1; }
-message GetTestRes { string status = 1; }
+message GetTestReq {
+  int32 timeoutMs = 1;
+}
 
-message ThrowErrorReq { int32 httpStatus = 1; optional int32 processCode = 2; }
+message GetTestRes {
+  string status = 1;
+}
 
-message LockResourceReq { string id = 1; }
+message ThrowErrorReq { 
+  message ErrorData {
+    optional string description = 2;
+  }
+
+  int32 httpStatus = 1;
+  optional int32 processCode = 2;
+  optional ErrorData data = 3;
+  optional string type = 4; 
+}
+
+message LockResourceReq {
+  string id = 1;
+}

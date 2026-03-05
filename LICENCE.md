@@ -18,40 +18,40 @@ or has expressed by any other means his willingness to license under the EUPL.
 
 In this Licence, the following terms have the following meaning:
 
--   ‘The Licence’: this Licence.
+- ‘The Licence’: this Licence.
 
--   ‘The Original Work’: the work or software distributed or communicated by the
-    Licensor under this Licence, available as Source Code and also as Executable
-    Code as the case may be.
+- ‘The Original Work’: the work or software distributed or communicated by the
+  Licensor under this Licence, available as Source Code and also as Executable
+  Code as the case may be.
 
--   ‘Derivative Works’: the works or software that could be created by the
-    Licensee, based upon the Original Work or modifications thereof. This Licence
-    does not define the extent of modification or dependence on the Original Work
-    required in order to classify a work as a Derivative Work; this extent is
-    determined by copyright law applicable in the country mentioned in Article 15.
+- ‘Derivative Works’: the works or software that could be created by the
+  Licensee, based upon the Original Work or modifications thereof. This Licence
+  does not define the extent of modification or dependence on the Original Work
+  required in order to classify a work as a Derivative Work; this extent is
+  determined by copyright law applicable in the country mentioned in Article 15.
 
--   ‘The Work’: the Original Work or its Derivative Works.
+- ‘The Work’: the Original Work or its Derivative Works.
 
--   ‘The Source Code’: the human-readable form of the Work which is the most
-    convenient for people to study and modify.
+- ‘The Source Code’: the human-readable form of the Work which is the most
+  convenient for people to study and modify.
 
--   ‘The Executable Code’: any code which has generally been compiled and which is
-    meant to be interpreted by a computer as a program.
+- ‘The Executable Code’: any code which has generally been compiled and which is
+  meant to be interpreted by a computer as a program.
 
--   ‘The Licensor’: the natural or legal person that distributes or communicates
-    the Work under the Licence.
+- ‘The Licensor’: the natural or legal person that distributes or communicates
+  the Work under the Licence.
 
--   ‘Contributor(s)’: any natural or legal person who modifies the Work under the
-    Licence, or otherwise contributes to the creation of a Derivative Work.
+- ‘Contributor(s)’: any natural or legal person who modifies the Work under the
+  Licence, or otherwise contributes to the creation of a Derivative Work.
 
--   ‘The Licensee’ or ‘You’: any natural or legal person who makes any usage of
-    the Work under the terms of the Licence.
+- ‘The Licensee’ or ‘You’: any natural or legal person who makes any usage of
+  the Work under the terms of the Licence.
 
--   ‘Distribution’ or ‘Communication’: any act of selling, giving, lending,
-    renting, distributing, communicating, transmitting, or otherwise making
-    available, online or offline, copies of the Work or providing access to its
-    essential functionalities at the disposal of any other natural or legal
-    person.
+- ‘Distribution’ or ‘Communication’: any act of selling, giving, lending,
+  renting, distributing, communicating, transmitting, or otherwise making
+  available, online or offline, copies of the Work or providing access to its
+  essential functionalities at the disposal of any other natural or legal
+  person.
 
 2. Scope of the rights granted by the Licence
 
@@ -59,15 +59,15 @@ The Licensor hereby grants You a worldwide, royalty-free, non-exclusive,
 sublicensable licence to do the following, for the duration of copyright vested
 in the Original Work:
 
--   use the Work in any circumstance and for all usage,
--   reproduce the Work,
--   modify the Work, and make Derivative Works based upon the Work,
--   communicate to the public, including the right to make available or display
-    the Work or copies thereof to the public and perform publicly, as the case may
-    be, the Work,
--   distribute the Work or copies thereof,
--   lend and rent the Work or copies thereof,
--   sublicense rights in the Work or copies thereof.
+- use the Work in any circumstance and for all usage,
+- reproduce the Work,
+- modify the Work, and make Derivative Works based upon the Work,
+- communicate to the public, including the right to make available or display
+  the Work or copies thereof to the public and perform publicly, as the case may
+  be, the Work,
+- distribute the Work or copies thereof,
+- lend and rent the Work or copies thereof,
+- sublicense rights in the Work or copies thereof.
 
 Those rights can be exercised on any media, supports and formats, whether now
 known or later invented, as far as the applicable law permits so.
@@ -240,43 +240,43 @@ their choice.
 
 Without prejudice to specific agreement between parties,
 
--   any litigation resulting from the interpretation of this License, arising
-    between the European Union institutions, bodies, offices or agencies, as a
-    Licensor, and any Licensee, will be subject to the jurisdiction of the Court
-    of Justice of the European Union, as laid down in article 272 of the Treaty on
-    the Functioning of the European Union,
+- any litigation resulting from the interpretation of this License, arising
+  between the European Union institutions, bodies, offices or agencies, as a
+  Licensor, and any Licensee, will be subject to the jurisdiction of the Court
+  of Justice of the European Union, as laid down in article 272 of the Treaty on
+  the Functioning of the European Union,
 
--   any litigation arising between other parties and resulting from the
-    interpretation of this License, will be subject to the exclusive jurisdiction
-    of the competent court where the Licensor resides or conducts its primary
-    business.
+- any litigation arising between other parties and resulting from the
+  interpretation of this License, will be subject to the exclusive jurisdiction
+  of the competent court where the Licensor resides or conducts its primary
+  business.
 
 15. Applicable Law
 
 Without prejudice to specific agreement between parties,
 
--   this Licence shall be governed by the law of the European Union Member State
-    where the Licensor has his seat, resides or has his registered office,
+- this Licence shall be governed by the law of the European Union Member State
+  where the Licensor has his seat, resides or has his registered office,
 
--   this licence shall be governed by Belgian law if the Licensor has no seat,
-    residence or registered office inside a European Union Member State.
+- this licence shall be governed by Belgian law if the Licensor has no seat,
+  residence or registered office inside a European Union Member State.
 
 Appendix
 
 ‘Compatible Licences’ according to Article 5 EUPL are:
 
--   GNU General Public License (GPL) v. 2, v. 3
--   GNU Affero General Public License (AGPL) v. 3
--   Open Software License (OSL) v. 2.1, v. 3.0
--   Eclipse Public License (EPL) v. 1.0
--   CeCILL v. 2.0, v. 2.1
--   Mozilla Public Licence (MPL) v. 2
--   GNU Lesser General Public Licence (LGPL) v. 2.1, v. 3
--   Creative Commons Attribution-ShareAlike v. 3.0 Unported (CC BY-SA 3.0) for
-    works other than software
--   European Union Public Licence (EUPL) v. 1.1, v. 1.2
--   Québec Free and Open-Source Licence — Reciprocity (LiLiQ-R) or Strong
-    Reciprocity (LiLiQ-R+).
+- GNU General Public License (GPL) v. 2, v. 3
+- GNU Affero General Public License (AGPL) v. 3
+- Open Software License (OSL) v. 2.1, v. 3.0
+- Eclipse Public License (EPL) v. 1.0
+- CeCILL v. 2.0, v. 2.1
+- Mozilla Public Licence (MPL) v. 2
+- GNU Lesser General Public Licence (LGPL) v. 2.1, v. 3
+- Creative Commons Attribution-ShareAlike v. 3.0 Unported (CC BY-SA 3.0) for
+  works other than software
+- European Union Public Licence (EUPL) v. 1.1, v. 1.2
+- Québec Free and Open-Source Licence — Reciprocity (LiLiQ-R) or Strong
+  Reciprocity (LiLiQ-R+).
 
 The European Commission may update this Appendix to later versions of the above
 licences without producing a new version of the EUPL, as long as they provide

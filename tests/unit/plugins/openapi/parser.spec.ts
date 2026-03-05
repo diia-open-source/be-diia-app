@@ -63,9 +63,9 @@ const typePropMixin = {
 describe(`OpenApi typeParser`, () => {
     describe(`method parseType`, () => {
         it('should return undefined if type has null flag', () => {
-            const type = <Type>{
+            const type = {
                 flags: TypeFlags.Null,
-            }
+            } as Type
 
             const result = typeParser.parseType(type)
 
@@ -73,13 +73,13 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should return default object literal expression', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: 0,
                 intrinsicName: 'intrinsicName',
                 symbol: { name: 'symbolName' },
-            })
+            } as unknown as Type
 
-            jest.spyOn(console, 'log').mockImplementation(() => {})
+            vi.spyOn(console, 'log').mockImplementation(() => {})
 
             const expected = factory.createObjectLiteralExpression()
 
@@ -89,23 +89,23 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse string', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.String,
                 value: 'string1',
                 symbol: { name: 'symbolName' },
                 intrinsicName: 'intrinsicName',
-            })
+            } as unknown as Type
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(stringMatcher)
         })
 
         it('should parse literal', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.NumberLike,
                 value: 10,
-            })
+            } as unknown as Type
 
             const result = typeParser.parseType(type)
 
@@ -113,11 +113,11 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse literal without value', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.NumberLike,
                 symbol: { name: 'symbolName' },
                 intrinsicName: 'true',
-            })
+            } as unknown as Type
 
             const result = typeParser.parseType(type)
 
@@ -125,7 +125,7 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse array', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 typeArguments: [
                     {
@@ -135,37 +135,37 @@ describe(`OpenApi typeParser`, () => {
                         intrinsicName: 'intrinsicName',
                     },
                 ],
-            })
+            } as unknown as Type
 
-            jest.spyOn(typeChecker, 'isArrayType').mockReturnValueOnce(true)
+            vi.spyOn(typeChecker, 'isArrayType').mockReturnValueOnce(true)
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(arrayMatcher)
         })
 
         it('should parse empty array', () => {
-            const type = <Type>(<unknown>{ flags: TypeFlags.Object })
+            const type = { flags: TypeFlags.Object } as unknown as Type
 
-            jest.spyOn(typeChecker, 'isArrayType').mockReturnValueOnce(true)
+            vi.spyOn(typeChecker, 'isArrayType').mockReturnValueOnce(true)
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(emptyArrayMatcher)
         })
 
         it('should parse empty tuple', () => {
-            const type = <Type>(<unknown>{ flags: TypeFlags.Object })
+            const type = { flags: TypeFlags.Object } as unknown as Type
 
-            jest.spyOn(typeChecker, 'isTupleType').mockReturnValueOnce(true)
+            vi.spyOn(typeChecker, 'isTupleType').mockReturnValueOnce(true)
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(emptyArrayMatcher)
         })
 
         it('should parse tuple', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 typeArguments: [
                     {
@@ -178,80 +178,80 @@ describe(`OpenApi typeParser`, () => {
                         value: false,
                     },
                 ],
-            })
+            } as unknown as Type
 
-            jest.spyOn(typeChecker, 'isTupleType').mockReturnValueOnce(true)
+            vi.spyOn(typeChecker, 'isTupleType').mockReturnValueOnce(true)
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(tupleMatcher)
         })
 
         it('should parse ObjectId', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 symbol: { name: 'ObjectId' },
-            })
+            } as unknown as Type
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(objectIdMatcher)
         })
 
         it('should parse Date', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 symbol: { name: 'Date' },
-            })
+            } as unknown as Type
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(dateMatcher)
         })
 
         it('should parse Buffer', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 symbol: { name: 'Buffer' },
-            })
+            } as unknown as Type
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(bufferMatcher)
         })
 
         it('should parse indexed object of Number type', () => {
-            const type = <Type>(<unknown>{ flags: TypeFlags.Object })
+            const type = { flags: TypeFlags.Object } as unknown as Type
 
-            jest.spyOn(typeChecker, 'getIndexInfoOfType').mockReturnValueOnce({
+            vi.spyOn(typeChecker, 'getIndexInfoOfType').mockReturnValueOnce({
                 type: {
                     flags: TypeFlags.Number,
                     value: 13,
                 },
             })
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(indexedNumberMatcher)
         })
 
         it('should parse indexed object of String type', () => {
-            const type = <Type>(<unknown>{ flags: TypeFlags.Object })
+            const type = { flags: TypeFlags.Object } as unknown as Type
 
-            jest.spyOn(typeChecker, 'getIndexInfoOfType').mockReturnValueOnce({
+            vi.spyOn(typeChecker, 'getIndexInfoOfType').mockReturnValueOnce({
                 type: {
                     flags: TypeFlags.String,
                     value: 'mocked string',
                 },
             })
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(indexedStringMatcher)
         })
 
         it('should parse type from external package', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 symbol: {
                     declarations: [
@@ -265,17 +265,17 @@ describe(`OpenApi typeParser`, () => {
                         return 'externalType'
                     },
                 },
-            })
+            } as unknown as Type
 
-            jest.spyOn(programMock, 'isSourceFileFromExternalLibrary').mockReturnValueOnce(true)
+            vi.spyOn(programMock, 'isSourceFileFromExternalLibrary').mockReturnValueOnce(true)
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(externalPackageTypeMatcher)
         })
 
         it('should parse record with many keys', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 aliasTypeArguments: [
                     {
@@ -289,9 +289,9 @@ describe(`OpenApi typeParser`, () => {
                         return '__type'
                     },
                 },
-            })
+            } as unknown as Type
 
-            jest.spyOn(typeChecker, 'getPropertiesOfType').mockReturnValue([
+            vi.spyOn(typeChecker, 'getPropertiesOfType').mockReturnValue([
                 {
                     type: {
                         flags: TypeFlags.NumberLike,
@@ -306,22 +306,22 @@ describe(`OpenApi typeParser`, () => {
                 { escapedName: 'prop6' },
             ])
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(recordMatcher)
         })
 
         it('should parse interface', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Object,
                 symbol: {
                     getName(): string {
                         return '__type'
                     },
                 },
-            })
+            } as unknown as Type
 
-            jest.spyOn(typeChecker, 'getPropertiesOfType').mockReturnValue([
+            vi.spyOn(typeChecker, 'getPropertiesOfType').mockReturnValue([
                 {
                     ...typePropMixin,
                     type: {
@@ -344,13 +344,13 @@ describe(`OpenApi typeParser`, () => {
                 },
             ])
 
-            const result = typeParser.parseType(type, <Program>(<unknown>programMock))
+            const result = typeParser.parseType(type, programMock as unknown as Program)
 
             expect(result).toMatchObject(interfaceMatcher)
         })
 
         it('should parse intersection', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Intersection,
                 types: [
                     {
@@ -360,9 +360,9 @@ describe(`OpenApi typeParser`, () => {
                         intrinsicName: 'intrinsicName',
                     },
                 ],
-            })
+            } as unknown as Type
 
-            jest.spyOn(typeChecker, 'typeToString').mockReturnValue('unknown')
+            vi.spyOn(typeChecker, 'typeToString').mockReturnValue('unknown')
 
             const result = typeParser.parseType(type)
 
@@ -383,7 +383,7 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse Enum', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.EnumLike,
                 types: [
                     {
@@ -391,7 +391,7 @@ describe(`OpenApi typeParser`, () => {
                         value: 'enum1',
                     },
                 ],
-            })
+            } as unknown as Type
 
             const result = typeParser.parseEnum(type)
 
@@ -412,7 +412,7 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse union with couple types', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Union,
                 types: [
                     {
@@ -424,7 +424,7 @@ describe(`OpenApi typeParser`, () => {
                         value: 'string',
                     },
                 ],
-            })
+            } as unknown as Type
 
             const result = typeParser.parseUnion(type)
 
@@ -437,7 +437,7 @@ describe(`OpenApi typeParser`, () => {
         })
 
         it('should parse union with one types', () => {
-            const type = <Type>(<unknown>{
+            const type = {
                 flags: TypeFlags.Union,
                 types: [
                     {
@@ -445,7 +445,7 @@ describe(`OpenApi typeParser`, () => {
                         value: false,
                     },
                 ],
-            })
+            } as unknown as Type
 
             const result = typeParser.parseUnion(type)
 

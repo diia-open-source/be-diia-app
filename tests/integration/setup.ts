@@ -1,4 +1,6 @@
-jest.setTimeout(3000000)
+import * as dotenv from 'dotenv-flow'
+
+dotenv.config({ path: 'tests/integration/.env.test', silent: true })
 
 const appDir = 'tests/integration'
 

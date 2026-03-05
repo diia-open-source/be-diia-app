@@ -2,6 +2,7 @@ import { NameAndRegistrationPair, asClass, asValue } from 'awilix'
 
 import { MetricsService } from '@diia-inhouse/diia-metrics'
 import type { Queue as QueueType } from '@diia-inhouse/diia-queue'
+import { Utils } from '@diia-inhouse/utils'
 import { AppValidator } from '@diia-inhouse/validators'
 
 import { ActionExecutor } from './actionExecutor'
@@ -13,16 +14,29 @@ import MoleculerService from './moleculer/moleculerWrapper'
 export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
     config: TConfig,
 ): Promise<NameAndRegistrationPair<BaseDeps<TConfig>>> {
-    const { isMoleculerEnabled, healthCheck: healthCheckConfig, store, redis, rabbit, db, auth, identifier, metrics, featureFlags } = config
+    const {
+        isMoleculerEnabled,
+        healthCheck: healthCheckConfig,
+        store,
+        rabbit,
+        databaseAdapter,
+        db,
+        postgres,
+        auth,
+        identifier,
+        metrics,
+        featureFlags,
+    } = config
     const baseDeps: NameAndRegistrationPair<BaseDeps<TConfig>> = {
         config: asValue(config),
         validator: asClass(AppValidator).singleton(),
         actionExecutor: asClass(ActionExecutor).singleton(),
         metrics: asClass(MetricsService, {
-            injector: () => ({ metricsConfig: metrics?.custom || {}, isMoleculerEnabled }),
+            injector: () => ({ metricsConfig: metrics?.custom || {} }),
         }).singleton(),
         grpcClientFactory: asClass(GrpcClientFactory).singleton(),
         grpcService: asClass(GrpcService).singleton(),
+        utils: asClass(Utils).singleton(),
     }
     if (healthCheckConfig) {
         const { HealthCheck } = await import('@diia-inhouse/healthcheck')
@@ -37,70 +51,54 @@ export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
     }
 
     if (store) {
-        const { StoreService, RedlockService } = await import('@diia-inhouse/redis')
+        const { StoreService, RedlockService, PubSubService } = await import('@diia-inhouse/redis')
 
         baseDeps.store = asClass(StoreService, { injector: () => ({ storeConfig: store }) }).singleton()
         baseDeps.redlock = asClass(RedlockService, {
             injector: () => ({ storeConfig: store }),
         }).singleton()
-    }
-
-    if (redis) {
-        const { CacheService, PubSubService } = await import('@diia-inhouse/redis')
-
-        baseDeps.cache = asClass(CacheService, { injector: () => ({ redisConfig: redis }) }).singleton()
-        baseDeps.pubsub = asClass(PubSubService, { injector: () => ({ redisConfig: redis }) }).singleton()
+        baseDeps.pubsub = asClass(PubSubService, { injector: () => ({ redisConfig: store }) }).singleton()
     }
 
     if (rabbit) {
-        const {
-            ExternalCommunicator,
-            ExternalCommunicatorChannel,
-            ExternalEventBus,
-            ScheduledTask,
-            Queue,
-            EventMessageHandler,
-            EventMessageValidator,
-            EventBus,
-            Task,
-        } = await import('@diia-inhouse/diia-queue')
+        const { ExternalCommunicator, ExternalEventBus, ScheduledTask, Queue, EventMessageHandler, EventMessageValidator, EventBus, Task } =
+            await import('@diia-inhouse/diia-queue')
 
         baseDeps.queue = asClass(Queue, { injector: () => ({ connectionConfig: rabbit }) }).singleton()
         baseDeps.eventMessageHandler = asClass(EventMessageHandler).singleton()
         baseDeps.eventMessageValidator = asClass(EventMessageValidator).singleton()
-        baseDeps.externalChannel = asClass(ExternalCommunicatorChannel).singleton()
         const { internal: internalQueueConfig, external: externalQueueConfig } = rabbit
         if (internalQueueConfig) {
             baseDeps.task = asClass(Task, {
-                injector: (c) => ({ queueProvider: c.resolve<QueueType>('queue').getInternalQueue() }),
+                injector: (c) => ({ queueProvider: c.resolve<QueueType>('queue').makeInternalRabbitMQProvider('task') }),
             }).singleton()
 
             if (internalQueueConfig.scheduledTaskQueueName) {
                 baseDeps.scheduledTask = asClass(ScheduledTask, {
                     injector: (c) => ({
-                        queueProvider: c.resolve<QueueType>('queue').getInternalQueue(),
+                        queueProvider: c.resolve<QueueType>('queue').makeInternalRabbitMQProvider('scheduledTask'),
                         queueName: internalQueueConfig.scheduledTaskQueueName,
                     }),
                 }).singleton()
             }
 
-            if (internalQueueConfig.queueName) {
-                baseDeps.eventBus = asClass(EventBus, {
-                    injector: (c) => ({
-                        queueProvider: c.resolve<QueueType>('queue').getInternalQueue(),
-                        queueName: internalQueueConfig.queueName,
-                    }),
-                }).singleton()
-            }
+            baseDeps.eventBus = asClass(EventBus, {
+                injector: (c) => ({
+                    queueProvider: c.resolve<QueueType>('queue').makeInternalRabbitMQProvider('eventBus'),
+                    queueName: internalQueueConfig.queueName,
+                }),
+            }).singleton()
         }
 
         if (externalQueueConfig) {
             baseDeps.externalEventBus = asClass(ExternalEventBus, {
-                injector: (c) => ({ queueProvider: c.resolve<QueueType>('queue').getExternalQueue() }),
+                injector: (c) => ({ queueProvider: c.resolve<QueueType>('queue').makeExternalRabbitMQProvider('externalEventBus') }),
             }).singleton()
             baseDeps.external = asClass(ExternalCommunicator).singleton()
         }
     }
+
+    baseDeps.databaseAdapter = asValue(databaseAdapter ?? 'mongo')
 
     if (db) {
         const { DatabaseService, DbType } = await import('@diia-inhouse/db')
@@ -108,6 +106,12 @@ export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
         baseDeps.database = asClass(DatabaseService, {
             injector: () => ({ dbConfigs: { [DbType.Main]: db } }),
         }).singleton()
+    }
+
+    if (postgres) {
+        const { PostgresDatabaseService } = await import('@diia-inhouse/db')
+
+        baseDeps.postgresDatabaseService = asClass(PostgresDatabaseService).singleton()
     }
 
     if (auth) {

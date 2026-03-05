@@ -1,8 +1,6 @@
-import { config } from 'dotenv-flow'
+export { type AwilixContainer, type Constructor, Lifetime, asClass, asFunction, asValue, type NameAndRegistrationPair, listModules } from 'awilix'
 
-config({ silent: true })
-
-export { AwilixContainer, Constructor, Lifetime, asClass, asFunction, asValue, NameAndRegistrationPair, listModules } from 'awilix'
+export { type LoadedModuleDescriptor } from 'awilix/lib/load-modules'
 
 export * from '@opentelemetry/api'
 

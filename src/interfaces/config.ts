@@ -1,5 +1,5 @@
 import type { AuthConfig, IdentifierConfig } from '@diia-inhouse/crypto'
-import type { AppDbConfig } from '@diia-inhouse/db'
+import type { AppDbConfig, DatabaseAdapterType, PostgresDbConfig } from '@diia-inhouse/db'
 import type { MetricsConfig as CustomMetricsConfig } from '@diia-inhouse/diia-metrics'
 import type { QueueConnectionConfig } from '@diia-inhouse/diia-queue'
 import type { FeatureConfig } from '@diia-inhouse/features'
@@ -9,7 +9,7 @@ import type { GenericObject, HttpMethod } from '@diia-inhouse/types'
 
 import { GrpcServerConfig } from './grpc'
 
-export interface CorsConfig {
+export type CorsConfig = {
     // Configures the Access-Control-Allow-Origin CORS header.
     origins: string[]
     // Configures the Access-Control-Allow-Methods CORS header.
@@ -58,8 +58,8 @@ export interface BaseConfig {
     depsDir?: string
     transporter?: TransporterConfig
     app?: {
-        externalBusTimeout?: number
         [key: string]: unknown
+        externalBusTimeout?: number
     }
     cors?: CorsConfig
     balancing?: BalancingStrategy
@@ -67,10 +67,13 @@ export interface BaseConfig {
     metrics?: MetricsConfig
     isMoleculerEnabled?: boolean
     store?: RedisConfig
+    /** @deprecated use store instead */
     redis?: RedisConfig
     rabbit?: QueueConnectionConfig
     healthCheck?: HealthCheckConfig
+    databaseAdapter?: DatabaseAdapterType
     db?: AppDbConfig
+    postgres?: PostgresDbConfig
     auth?: AuthConfig
     identifier?: IdentifierConfig
     grpcServer?: GrpcServerConfig

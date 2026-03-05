@@ -1,5 +1,5 @@
 {
-    "extends": "@diia-inhouse/configs/tsconfig/tsconfig.esm",
+    "extends": "@diia-inhouse/configs/tsconfig",
     "compilerOptions": {
         "outDir": "dist",
         "declaration": true,
@@ -10,5 +10,5 @@
         "strict": true
     },
     "include": ["src/**/*"],
-    "exclude": ["node_modules", "tests"]
+    "exclude": ["node_modules"]
 }

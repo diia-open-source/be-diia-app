@@ -1,49 +1,45 @@
-import { IdentifierConfig } from '@diia-inhouse/crypto'
 import { EnvService } from '@diia-inhouse/env'
-import { HealthCheckConfig } from '@diia-inhouse/healthcheck'
 
-import { BalancingStrategy, BaseConfig, MetricsConfig, TransporterConfig } from '../../src/interfaces'
+import { BaseConfig } from '../../src/interfaces'
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-export const configFactory = async (envService: EnvService, serviceName: string) =>
+export const configFactory = async (_: EnvService, serviceName: string) =>
     ({
         isMoleculerEnabled: false,
         serviceName,
         depsDir: './tests/unit/dist',
-
-        transporter: <TransporterConfig>{
-            type: envService.getVar('TRANSPORT_TYPE', 'string', 'Redis'),
-            options: envService.getVar('TRANSPORT_OPTIONS', 'object', {}),
+        transporter: {
+            type: EnvService.getVar('TRANSPORT_TYPE', 'string', 'Redis'),
+            options: EnvService.getVar('TRANSPORT_OPTIONS', 'object', {}),
         },
 
-        balancing: <BalancingStrategy>{
-            strategy: process.env.BALANCING_STRATEGY_NAME,
+        balancing: {
+            strategy: EnvService.getVar('BALANCING_STRATEGY_NAME', 'string', 'RoundRobin'),
             strategyOptions: process.env.BALANCING_STRATEGY_OPTIONS ? JSON.parse(process.env.BALANCING_STRATEGY_OPTIONS) : {},
         },
 
-        healthCheck: <HealthCheckConfig>{
-            isEnabled: envService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
-            port: envService.getVar('HEALTH_CHECK_IS_PORT', 'number', 3000),
+        healthCheck: {
+            isEnabled: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
+            port: EnvService.getVar('HEALTH_CHECK_IS_PORT', 'number', 3000),
         },
 
-        metrics: <MetricsConfig>{
+        metrics: {
             moleculer: {
                 prometheus: {
-                    isEnabled: envService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
-                    port: envService.getVar('METRICS_MOLECULER_PROMETHEUS_PORT', 'number', 3031),
-                    path: envService.getVar('METRICS_MOLECULER_PROMETHEUS_PATH', 'string', '/metrics'),
+                    isEnabled: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
+                    port: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_PORT', 'number', 3031),
+                    path: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_PATH', 'string', '/metrics'),
                 },
             },
             custom: {
-                disabled: envService.getVar('METRICS_CUSTOM_DISABLED', 'boolean', false),
-                port: envService.getVar('METRICS_CUSTOM_PORT', 'number', 3030),
-                moleculer: {
-                    disabled: envService.getVar('METRICS_CUSTOM_MOLECULER_DISABLED', 'boolean', false),
-                    port: envService.getVar('METRICS_CUSTOM_MOLECULER_PORT', 'number', 3031),
-                    path: envService.getVar('METRICS_CUSTOM_MOLECULER_PATH', 'string', '/metrics'),
+                disabled: EnvService.getVar('METRICS_CUSTOM_DISABLED', 'boolean', false),
+                port: EnvService.getVar('METRICS_CUSTOM_PORT', 'number', 3030),
+                disableDefaultMetrics: EnvService.getVar('METRICS_CUSTOM_DISABLE_DEFAULT_METRICS', 'boolean', false),
+                defaultLabels: EnvService.getVar('METRICS_CUSTOM_DEFAULT_LABELS', 'object', {}),
+                pushGateway: {
+                    isEnabled: EnvService.getVar('METRICS_CUSTOM_PUSH_GATEWAY_IS_ENABLED', 'boolean', false),
+                    url: EnvService.getVar('METRICS_CUSTOM_PUSH_GATEWAY_URL', 'string', 'http://localhost:3030'),
                 },
-                disableDefaultMetrics: envService.getVar('METRICS_CUSTOM_DISABLE_DEFAULT_METRICS', 'boolean', false),
-                defaultLabels: envService.getVar('METRICS_CUSTOM_DEFAULT_LABELS', 'object', {}),
             },
         },
 
@@ -54,8 +50,8 @@ export const configFactory = async (envService: EnvService, serviceName: string)
             externalBusTimeout: process.env.EXTERNAL_BUS_TIMEOUT ? Number.parseInt(process.env.EXTERNAL_BUS_TIMEOUT, 10) : 5 * 1000,
         },
 
-        identifier: <IdentifierConfig>{
-            salt: process.env.SALT,
+        identifier: {
+            salt: process.env.SALT || '',
         },
 
         cors: {
@@ -68,6 +64,6 @@ export const configFactory = async (envService: EnvService, serviceName: string)
         },
 
         grpc: {
-            testServiceAddress: envService.getVar('GRPC_TEST_SERVICE_ADDRESS', 'string', null),
+            testServiceAddress: EnvService.getVar('GRPC_TEST_SERVICE_ADDRESS', 'string', null),
         },
     }) satisfies BaseConfig & Record<string, unknown>

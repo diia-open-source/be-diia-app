@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
-import { SEMATTRS_MESSAGING_DESTINATION, SEMATTRS_MESSAGING_SYSTEM, SEMATTRS_RPC_SYSTEM } from '@opentelemetry/semantic-conventions'
 import {
     ChannelCredentials,
     ChannelOptions,
@@ -15,18 +14,20 @@ import {
 import { deadlineMiddleware } from 'nice-grpc-client-middleware-deadline'
 import protobuf from 'protobufjs'
 
-import { MetricsService, RequestMechanism, RequestStatus } from '@diia-inhouse/diia-metrics'
+import { MetricsService, RequestMechanism, RequestStatus, TotalRequestsLabelsMap } from '@diia-inhouse/diia-metrics'
 import { QueueContext } from '@diia-inhouse/diia-queue'
-import { LogData, Logger } from '@diia-inhouse/types'
-import { utils } from '@diia-inhouse/utils'
+import { ApiError } from '@diia-inhouse/errors'
+import { GrpcStatusCode, LogData, Logger, grpcMetadataKeys } from '@diia-inhouse/types'
+import { NetworkUtils, utils } from '@diia-inhouse/utils'
 
-import { CallOptions } from '../interfaces/grpc'
-
+import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc'
+import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing'
+import { bindAsyncGenerator } from './utils'
 import wrappers from './wrappers'
 
 export class GrpcClientFactory {
     constructor(
-        private readonly serviceName: string,
+        private readonly systemServiceName: string,
         private readonly logger: Logger,
         private readonly metrics: MetricsService,
 
@@ -40,7 +41,16 @@ export class GrpcClientFactory {
         serviceAddress: string,
         channelOptions: ChannelOptions = {},
     ): Client<Service> {
-        const channelImplementation = createChannel(serviceAddress, ChannelCredentials.createInsecure(), channelOptions)
+        const defaultOptions: ChannelOptions = {
+            'grpc.keepalive_timeout_ms': 10000,
+            'grpc.keepalive_time_ms': 15000,
+            'grpc.keepalive_permit_without_calls': 1,
+        }
+
+        const channelImplementation = createChannel(serviceAddress, ChannelCredentials.createInsecure(), {
+            ...defaultOptions,
+            ...channelOptions,
+        })
 
         return createClientFactory()
             .use(this.loggingMiddleware.bind(this))
@@ -66,10 +76,9 @@ export class GrpcClientFactory {
             const startTime = process.hrtime.bigint()
             const { path } = call.method
 
-            const defaultLabels = {
+            const defaultLabels: Partial<TotalRequestsLabelsMap> = {
                 mechanism: RequestMechanism.Grpc,
-                source: self.serviceName,
-                destination: destinationServiceName,
+                source: self.systemServiceName,
                 route: path,
             }
 
@@ -78,37 +87,39 @@ export class GrpcClientFactory {
             const meta = options.metadata || new Metadata()
 
             for (const key in logData) {
-                const value = logData[<keyof LogData>key]
+                const value = logData[key as keyof LogData]
                 if (key !== 'actionVersion' && value && !meta.has(key)) {
                     meta.set(key, value)
                 }
             }
 
-            const tracer = trace.getTracer(self.serviceName)
+            const tracer = trace.getTracer(self.systemServiceName)
             const span = tracer.startSpan(
                 `send ${path}`,
                 {
                     kind: SpanKind.CLIENT,
                     attributes: {
-                        [SEMATTRS_MESSAGING_SYSTEM]: RequestMechanism.Grpc,
-                        [SEMATTRS_MESSAGING_DESTINATION]: destinationServiceName,
-                        [SEMATTRS_RPC_SYSTEM]: RequestMechanism.Grpc,
+                        [ATTR_RPC_SYSTEM]: RequestMechanism.Grpc,
+                        [ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME]: destinationServiceName,
                     },
                 },
                 context.active(),
             )
-            const tracing = <{ traceparent?: string; tracestate?: string }>{}
+
+            const tracing = {} as { traceparent?: string; tracestate?: string }
 
             propagation.inject(trace.setSpan(context.active(), span), tracing)
-            meta.set('tracing', JSON.stringify(tracing))
+            meta.set(grpcMetadataKeys.TRACING, JSON.stringify(tracing))
 
             if (tracing.traceparent) {
-                meta.set('traceparent', tracing.traceparent)
+                meta.set(grpcMetadataKeys.TRACE_PARENT, tracing.traceparent)
             }
 
             if (tracing.tracestate) {
-                meta.set('tracestate', tracing.tracestate)
+                meta.set(grpcMetadataKeys.TRACE_STATE, tracing.tracestate)
             }
+
+            meta.set(grpcMetadataKeys.SENT_FROM, self.systemServiceName)
 
             for (const kv of meta) {
                 const [key, value] = kv
@@ -117,11 +128,16 @@ export class GrpcClientFactory {
                     continue
                 }
 
+                const sessionKey: keyof GrpcClientMetadata = 'session'
+                if (key === sessionKey) {
+                    continue
+                }
+
                 try {
-                    if ((<string[]>value).length > 1) {
-                        span.setAttribute(`rpc.grpc.request.metadata.${key}`, <string[]>value)
-                    } else if ((<string[]>value).length === 1) {
-                        span.setAttribute(`rpc.grpc.request.metadata.${key}`, <string>(<string[]>value)[0])
+                    if ((value as string[]).length > 1) {
+                        span.setAttribute(ATTR_RPC_GRPC_REQUEST_METADATA(key), value as string[])
+                    } else if ((value as string[]).length === 1) {
+                        span.setAttribute(ATTR_RPC_GRPC_REQUEST_METADATA(key), (value as string[])[0] as string)
                     }
                 } catch {
                     // ignore result
@@ -129,12 +145,20 @@ export class GrpcClientFactory {
             }
 
             options.metadata = meta
+            options.onHeader = (header: Metadata): void => {
+                if (header.get(grpcMetadataKeys.HANDLED_BY)) {
+                    defaultLabels.destination = header.get(grpcMetadataKeys.HANDLED_BY)
+                }
+            }
 
             try {
-                const grpcResult: void | Awaited<Response> = yield* call.next(call.request, options)
+                const grpcResult: void | Awaited<Response> = yield* bindAsyncGenerator(
+                    trace.setSpan(context.active(), span),
+                    call.next(call.request, options),
+                )
 
                 self.metrics.totalTimerMetric.observeSeconds(
-                    { ...defaultLabels, status: RequestStatus.Successful },
+                    { ...defaultLabels, status: RequestStatus.Successful, statusCode: GrpcStatusCode.OK },
                     process.hrtime.bigint() - startTime,
                 )
                 span.setStatus({ code: SpanStatusCode.OK })
@@ -177,27 +201,21 @@ export class GrpcClientFactory {
         } = call
 
         this.logger.info(`ACT OUT: ${path}`, { transport: 'grpc', params: request })
+        const grpcResult = yield* call.next(request, options)
 
-        try {
-            const grpcResult = yield* call.next(request, options)
+        this.logger.info(`ACT OUT RESULT: ${path}`, grpcResult)
 
-            this.logger.info(`ACT OUT RESULT: ${path}`, grpcResult)
-
-            return grpcResult
-        } catch (err) {
-            utils.handleError(err, (apiError) => {
-                this.logger.error(`ACT OUT FAILED: ${path}`, { err: apiError })
-            })
-
-            throw err
-        }
+        return grpcResult
     }
 
     private async *errorHandlerMiddleware<Request, Response>(
         call: ClientMiddlewareCall<Request, Response>,
         options: CallOptions,
     ): AsyncGenerator<Awaited<Response>, void | Awaited<Response>, undefined> {
-        const { request } = call
+        const {
+            request,
+            method: { path },
+        } = call
 
         let trailer: Metadata | undefined
         try {
@@ -212,15 +230,36 @@ export class GrpcClientFactory {
 
             return grpcResult
         } catch (err) {
-            utils.handleError(err, (apiError) => {
-                const processCodeRaw = trailer?.get('processcode')
+            const handledError = utils.handleError(err, (apiError) => {
+                const originalErrorRaw = trailer?.get(grpcMetadataKeys.ORIGINAL_ERROR)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const originalError: any = originalErrorRaw ? utils.decodeValuesWithIterator(JSON.parse(originalErrorRaw)) : null
+
+                if (originalError) {
+                    originalError.data ||= {}
+                    originalError.data.opOriginalError ||= { type: originalError.type }
+
+                    return new ApiError(
+                        apiError.getMessage(),
+                        NetworkUtils.getHttpStatusCodeByGrpcCode(apiError.getCode()),
+                        originalError.data,
+                        originalError.data?.processCode,
+                    )
+                }
+
+                const processCodeRaw = trailer?.get(grpcMetadataKeys.PROCESS_CODE)
                 const processCode = processCodeRaw ? Number.parseInt(processCodeRaw, 10) : undefined
+
                 if (processCode) {
                     apiError.setProcessCode(processCode)
                 }
 
-                throw apiError
+                return apiError
             })
+
+            this.logger.error(`ACT OUT FAILED: ${path}`, { err: handledError })
+
+            throw handledError
         }
     }
 }

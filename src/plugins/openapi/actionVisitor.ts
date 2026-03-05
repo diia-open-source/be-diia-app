@@ -2,7 +2,6 @@
 import ts from 'typescript'
 
 import { ACTION_RESPONSE } from '../pluginConstants'
-
 import parser from './parser'
 
 const ActionVisitor = {
@@ -11,7 +10,7 @@ const ActionVisitor = {
 
         const visitClassNode = (node: ts.Node): ts.Node => {
             if (ts.isClassDeclaration(node)) {
-                const classMethods = <ts.MethodDeclaration[]>node.members.filter((member) => ts.isMethodDeclaration(member))
+                const classMethods = node.members.filter((member) => ts.isMethodDeclaration(member)) as ts.MethodDeclaration[]
 
                 const handlerMethod = classMethods.find((classMethod) => classMethod.name.getText() === 'handler')
 
@@ -27,7 +26,7 @@ const ActionVisitor = {
 
                 const type = typeChecker.getReturnTypeOfSignature(signature)
 
-                const responseType = type.symbol.getName() === 'Promise' ? (<ts.GenericType>type)?.typeArguments?.[0] : type
+                const responseType = type.symbol.getName() === 'Promise' ? (type as ts.GenericType)?.typeArguments?.[0] : type
 
                 if (!responseType) {
                     return ts.visitEachChild(node, visitClassNode, ctx)
