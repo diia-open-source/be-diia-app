@@ -89,7 +89,7 @@ export class GrpcServer {
             protosToLoad.push(schemaReflectionProtoPath)
         }
 
-        const includeDirs = [...externalProtosRootDirs, internalProtosDirname]
+        const includeDirs = [...externalProtosRootDirs, internalProtosDirname, ...PROTO_LOADER_OPTIONS.includeDirs]
         const pkgDefs = await load(protosToLoad, {
             ...PROTO_LOADER_OPTIONS,
             includeDirs,

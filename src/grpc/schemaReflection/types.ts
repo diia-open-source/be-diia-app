@@ -3,13 +3,14 @@ import protobuf from 'protobufjs'
 
 export const HTTP_METHODS = ['get', 'post', 'put', 'delete', 'patch'] as const
 
-export const PROTO_LOADER_OPTIONS: Options = {
+export const PROTO_LOADER_OPTIONS = {
     keepCase: true,
     longs: String,
     enums: String,
     defaults: true,
     oneofs: true,
-}
+    includeDirs: ['/usr/local/include', '/usr/include'],
+} satisfies Options
 
 export interface HttpMapping {
     method: string
