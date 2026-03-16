@@ -11,7 +11,6 @@ import {
     UntypedServiceImplementation,
 } from '@grpc/grpc-js'
 import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
-import protobuf from 'protobufjs'
 
 import { RequestMechanism } from '@diia-inhouse/diia-metrics'
 import { ApiError, HttpError } from '@diia-inhouse/errors'
@@ -47,7 +46,7 @@ import {
 } from '../interfaces'
 import { OnInitResults } from '../interfaces/onInitResults'
 import { GrpcServer } from './server'
-import wrappers from './wrappers'
+import { registerWrappers } from './wrappers'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     private readonly grpcServer: GrpcServer | undefined
@@ -91,7 +90,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             return
         }
 
-        Object.assign(protobuf.wrappers, wrappers)
+        registerWrappers(this.logger)
         this.grpcServer = new GrpcServer(
             this.config.grpcServer,
             this.logger,

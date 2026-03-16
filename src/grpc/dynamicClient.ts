@@ -8,7 +8,7 @@ import descriptorExt from 'protobufjs/ext/descriptor'
 import { Logger } from '@diia-inhouse/types'
 
 import { PROTO_LOADER_OPTIONS } from './schemaReflection/types'
-import wrappers from './wrappers'
+import { registerWrappers } from './wrappers'
 
 const DEFAULT_REFLECTION_TIMEOUT_MS = 15_000
 const DEFAULT_CALL_TIMEOUT_MS = 30_000
@@ -100,7 +100,7 @@ export class DynamicGrpcClient {
         this.callTimeoutMs = options?.callTimeoutMs ?? DEFAULT_CALL_TIMEOUT_MS
 
         // Register custom wrappers for types like google.protobuf.Timestamp
-        Object.assign(protobuf.wrappers, wrappers)
+        registerWrappers(this.logger)
     }
 
     async call(params: DynamicCallParams): Promise<object> {

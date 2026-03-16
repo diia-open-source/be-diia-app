@@ -12,7 +12,6 @@ import {
     createClientFactory,
 } from 'nice-grpc'
 import { deadlineMiddleware } from 'nice-grpc-client-middleware-deadline'
-import protobuf from 'protobufjs'
 
 import { MetricsService, RequestMechanism, RequestStatus, TotalRequestsLabelsMap } from '@diia-inhouse/diia-metrics'
 import { QueueContext } from '@diia-inhouse/diia-queue'
@@ -23,7 +22,7 @@ import { NetworkUtils, utils } from '@diia-inhouse/utils'
 import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc'
 import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing'
 import { bindAsyncGenerator } from './utils'
-import wrappers from './wrappers'
+import { registerWrappers } from './wrappers'
 
 export class GrpcClientFactory {
     constructor(
@@ -33,7 +32,7 @@ export class GrpcClientFactory {
 
         private readonly asyncLocalStorage?: AsyncLocalStorage<QueueContext>,
     ) {
-        Object.assign(protobuf.wrappers, wrappers)
+        registerWrappers(this.logger)
     }
 
     createGrpcClient<Service extends TsProtoServiceDefinition>(
