@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 
 import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
 import cookieParser from 'cookie-parser'
@@ -197,6 +198,7 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
     private createBrokerOptions(): BrokerOptions {
         const brokerOptions: BrokerOptions = {
+            nodeID: `${this.systemServiceName}-${randomUUID()}`,
             transporter: this.config.transporter,
             logger: new MoleculerLogger(this.logger),
             logLevel: 'warn',
