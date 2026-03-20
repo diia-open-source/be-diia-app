@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { hostname } from 'node:os'
 import path from 'node:path'
-import { performance } from 'node:perf_hooks'
 
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import {
@@ -66,10 +65,6 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
 
     private readonly nodeEnvObserver: Observer<NodeEnvLabelsMap>
 
-    private readonly eventLoopUtilizationObserver: Observer<{}>
-
-    private previousEventLoopUtilization: ReturnType<typeof performance.eventLoopUtilization> | undefined
-
     constructor(
         private readonly serviceName: string,
         private readonly nodeTracerProvider: NodeTracerProvider,
@@ -99,28 +94,6 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
                     labels: { env: this.baseContainer.resolve('envService').getEnv() },
                     value: 1,
                 }),
-            },
-        )
-        this.eventLoopUtilizationObserver = new Observer<{}>(
-            'diia_node_event_loop_utilization_ratio',
-            undefined,
-            'Indicates the event loop utilization ratio',
-            {
-                onCollect: (): ReturnType<Required<MetricOptions<{}>>['onCollect']> => {
-                    const currentUtilization = performance.eventLoopUtilization()
-
-                    if (this.previousEventLoopUtilization === undefined) {
-                        this.previousEventLoopUtilization = currentUtilization
-
-                        return { labels: {}, value: 0 }
-                    }
-
-                    const deltaUtilization = performance.eventLoopUtilization(this.previousEventLoopUtilization)
-
-                    this.previousEventLoopUtilization = currentUtilization
-
-                    return { labels: {}, value: deltaUtilization.utilization }
-                },
             },
         )
     }
