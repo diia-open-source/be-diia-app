@@ -39,6 +39,7 @@ export class SchemaReflectionInitializer {
                 responseTypeName: method.responseTypeName,
                 httpMapping: method.httpMapping,
                 description: metadata.methodDescriptions.get(method.path),
+                deprecated: metadata.methodDeprecations.get(method.path) || false,
                 requestStream: method.requestStream,
                 responseStream: method.responseStream,
             })

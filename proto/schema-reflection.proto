@@ -27,6 +27,7 @@ message ActionSchema {
     bool responseStream = 9;
     string requestTypeName = 10;
     string responseTypeName = 11;
+    bool deprecated = 12;
 }
 
 message HttpMapping {

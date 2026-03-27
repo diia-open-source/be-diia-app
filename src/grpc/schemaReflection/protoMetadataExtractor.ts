@@ -20,9 +20,14 @@ export class ProtoMetadataExtractor {
 
         const methods = this.extractMethods(root)
         const methodDescriptions = new Map<string, string>()
+        const methodDeprecations = new Map<string, boolean>()
         for (const method of methods) {
             if (method.description) {
                 methodDescriptions.set(method.fullPath, method.description)
+            }
+
+            if (method.deprecated) {
+                methodDeprecations.set(method.fullPath, true)
             }
         }
 
@@ -30,6 +35,7 @@ export class ProtoMetadataExtractor {
             root,
             methods,
             methodDescriptions,
+            methodDeprecations,
             fieldComments: this.extractFieldComments(root),
             messageComments: this.extractMessageComments(root),
         }
@@ -97,6 +103,7 @@ export class ProtoMetadataExtractor {
                     for (const method of nested.methodsArray) {
                         const httpOption = this.extractHttpOption(method)
                         const servicePath = nested.fullName.startsWith('.') ? nested.fullName.slice(1) : nested.fullName
+                        const { deprecated, description } = this.extractDeprecation(method)
 
                         methods.push({
                             serviceName: nested.name,
@@ -104,7 +111,8 @@ export class ProtoMetadataExtractor {
                             fullPath: `/${servicePath}/${method.name}`,
                             httpMethod: httpOption?.method,
                             httpPath: httpOption?.path,
-                            description: method.comment || undefined,
+                            description,
+                            deprecated,
                         })
                     }
                 } else if (nested instanceof protobuf.Namespace) {
@@ -171,6 +179,26 @@ export class ProtoMetadataExtractor {
         processNamespace(root)
 
         return comments
+    }
+
+    private extractDeprecation(method: protobuf.Method): { deprecated: boolean; description: string | undefined } {
+        const rawComment = method.comment || undefined
+        const isDeprecatedViaOption = (method.options as Record<string, unknown> | undefined)?.deprecated === true
+        const deprecatedPattern = /^[\t ]*@deprecated\b[\t ]*/im
+        const isDeprecatedViaComment = rawComment ? deprecatedPattern.test(rawComment) : false
+        const deprecated = isDeprecatedViaOption || isDeprecatedViaComment
+
+        let description = rawComment
+        if (isDeprecatedViaComment && rawComment) {
+            description =
+                rawComment
+                    .split('\n')
+                    .filter((line) => !deprecatedPattern.test(line))
+                    .join('\n')
+                    .trim() || undefined
+        }
+
+        return { deprecated, description }
     }
 
     private extractHttpOption(method: protobuf.Method): { method: string; path: string } | undefined {

@@ -52,6 +52,7 @@ export class GrpcSchemaService {
                     responseTypeName: method.responseTypeName,
                     httpMapping: method.httpMapping,
                     description: method.description,
+                    deprecated: method.deprecated,
                     requestStream: method.requestStream,
                     responseStream: method.responseStream,
                 }

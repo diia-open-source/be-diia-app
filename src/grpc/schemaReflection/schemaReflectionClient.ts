@@ -14,6 +14,7 @@ export interface DiscoveredAction {
     responseTypeName?: string
     httpMapping?: HttpMapping
     description?: string
+    deprecated?: boolean
     requestStream?: boolean
     responseStream?: boolean
 }
@@ -133,6 +134,7 @@ export class SchemaReflectionClient {
                 responseTypeName: action.responseTypeName,
                 httpMapping: action.httpMapping,
                 description: action.description,
+                deprecated: action.deprecated,
                 requestStream: action.requestStream,
                 responseStream: action.responseStream,
             })),

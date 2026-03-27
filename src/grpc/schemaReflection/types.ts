@@ -45,6 +45,7 @@ export interface ProtoMetadata {
     root: protobuf.Root
     methods: MethodMetadata[]
     methodDescriptions: Map<string, string>
+    methodDeprecations: Map<string, boolean>
     fieldComments: Map<string, string>
     messageComments: Map<string, string>
 }
@@ -56,6 +57,7 @@ export interface MethodMetadata {
     httpMethod?: string
     httpPath?: string
     description?: string
+    deprecated?: boolean
 }
 
 export interface JsonSchemaRef {
@@ -105,6 +107,7 @@ export interface RegisteredMethod {
     responseTypeName?: string
     httpMapping?: HttpMapping
     description?: string
+    deprecated?: boolean
     sessionType?: string
     actionName?: string
     requestStream?: boolean
@@ -121,6 +124,7 @@ export interface ActionSchemaDto {
     responseTypeName?: string
     httpMapping?: HttpMapping
     description?: string
+    deprecated?: boolean
     requestStream?: boolean
     responseStream?: boolean
 }
