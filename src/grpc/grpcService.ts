@@ -468,6 +468,8 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     }
 
     private async executeAction(action: GrpcAppAction, metadata: Metadata, headers: ActHeaders, params: GenericObject): Promise<unknown> {
+        this.stripSyntheticOneofFields(params)
+
         const actionArguments = {
             session: this.prepareActSessionFromGrpcInput(metadata) || { sessionType: SessionType.None },
             headers,
@@ -621,5 +623,29 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             type: apiError.getType(),
             data: utils.encodeValuesWithIterator(apiError.getData()),
         })
+    }
+
+    private isPlainObject(value: unknown): value is GenericObject {
+        return value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)
+    }
+
+    private stripSyntheticOneofFields(obj: GenericObject): void {
+        for (const key of Object.keys(obj)) {
+            const value = obj[key]
+            if (key.startsWith('_') && typeof value === 'string' && key === `_${value}` && value in obj) {
+                delete obj[key]
+                continue
+            }
+
+            if (this.isPlainObject(value)) {
+                this.stripSyntheticOneofFields(value)
+            } else if (Array.isArray(value)) {
+                for (const item of value) {
+                    if (this.isPlainObject(item)) {
+                        this.stripSyntheticOneofFields(item)
+                    }
+                }
+            }
+        }
     }
 }
