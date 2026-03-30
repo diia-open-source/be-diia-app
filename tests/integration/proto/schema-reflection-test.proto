@@ -22,7 +22,12 @@ service SchemaTestService {
   // Delete a user
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {};
 
-  // Internal method without HTTP mapping
+  /**
+   * Internal method without HTTP mapping
+   * 
+   * @deprecated use InternalProcessV2 instead.
+   * This method will be removed in the next major version.
+   */
   rpc InternalProcess(InternalProcessRequest) returns (InternalProcessResponse) {};
 }
 

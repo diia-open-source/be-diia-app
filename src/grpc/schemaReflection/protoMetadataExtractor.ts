@@ -184,21 +184,11 @@ export class ProtoMetadataExtractor {
     private extractDeprecation(method: protobuf.Method): { deprecated: boolean; description: string | undefined } {
         const rawComment = method.comment || undefined
         const isDeprecatedViaOption = (method.options as Record<string, unknown> | undefined)?.deprecated === true
-        const deprecatedPattern = /^[\t ]*@deprecated\b[\t ]*/im
+        const deprecatedPattern = /^[\t ]*@deprecated\b/im
         const isDeprecatedViaComment = rawComment ? deprecatedPattern.test(rawComment) : false
         const deprecated = isDeprecatedViaOption || isDeprecatedViaComment
 
-        let description = rawComment
-        if (isDeprecatedViaComment && rawComment) {
-            description =
-                rawComment
-                    .split('\n')
-                    .filter((line) => !deprecatedPattern.test(line))
-                    .join('\n')
-                    .trim() || undefined
-        }
-
-        return { deprecated, description }
+        return { deprecated, description: rawComment }
     }
 
     private extractHttpOption(method: protobuf.Method): { method: string; path: string } | undefined {

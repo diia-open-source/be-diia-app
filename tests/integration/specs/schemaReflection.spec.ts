@@ -70,6 +70,31 @@ describe('SchemaReflection', () => {
             })
         })
 
+        describe('deprecation extraction', () => {
+            it('detects deprecated methods from @deprecated comment', async () => {
+                const metadata = await extractor.extract([testProtoFile], includeDirs)
+
+                expect(metadata.methodDeprecations.get('/ua.gov.diia.test.schema.SchemaTestService/InternalProcess')).toBe(true)
+            })
+
+            it('does not mark non-deprecated methods', async () => {
+                const metadata = await extractor.extract([testProtoFile], includeDirs)
+
+                expect(metadata.methodDeprecations.has('/ua.gov.diia.test.schema.SchemaTestService/GetUser')).toBe(false)
+            })
+
+            it('keeps full comment as description including @deprecated tag', async () => {
+                const metadata = await extractor.extract([testProtoFile], includeDirs)
+
+                const description = metadata.methodDescriptions.get('/ua.gov.diia.test.schema.SchemaTestService/InternalProcess')
+
+                expect(description).toContain('Internal method without HTTP mapping')
+                expect(description).toContain('@deprecated')
+                expect(description).toContain('use InternalProcessV2 instead')
+                expect(description).toContain('This method will be removed in the next major version')
+            })
+        })
+
         describe('comment extraction', () => {
             it('extracts field comments from message definitions', async () => {
                 const metadata = await extractor.extract([testProtoFile], includeDirs)
