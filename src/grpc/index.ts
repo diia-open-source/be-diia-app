@@ -4,6 +4,8 @@ import { grpcMetadataKeys } from '@diia-inhouse/types'
 
 import { CallOptions, GrpcClientMetadata } from '../interfaces'
 
+export { Metadata as GrpcMetadata } from 'nice-grpc'
+
 export * from './grpcService'
 
 export * from './grpcClient'
