@@ -16,22 +16,27 @@ import { deadlineMiddleware } from 'nice-grpc-client-middleware-deadline'
 import { MetricsService, RequestMechanism, RequestStatus, TotalRequestsLabelsMap } from '@diia-inhouse/diia-metrics'
 import { QueueContext } from '@diia-inhouse/diia-queue'
 import { ApiError } from '@diia-inhouse/errors'
-import { GrpcStatusCode, LogData, Logger, grpcMetadataKeys } from '@diia-inhouse/types'
+import { DurationMs, GrpcStatusCode, LogData, Logger, grpcMetadataKeys } from '@diia-inhouse/types'
 import { NetworkUtils, utils } from '@diia-inhouse/utils'
 
+import { BaseConfig } from '../interfaces/config'
 import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc'
 import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing'
 import { bindAsyncGenerator } from './utils'
 import { registerWrappers } from './wrappers'
 
 export class GrpcClientFactory {
+    private readonly defaultDeadlineMs: number
+
     constructor(
+        private readonly config: BaseConfig,
         private readonly systemServiceName: string,
         private readonly logger: Logger,
         private readonly metrics: MetricsService,
 
         private readonly asyncLocalStorage?: AsyncLocalStorage<QueueContext>,
     ) {
+        this.defaultDeadlineMs = this.config.grpcClient?.defaultDeadlineMs ?? DurationMs.Minute
         registerWrappers(this.logger)
     }
 
@@ -56,7 +61,9 @@ export class GrpcClientFactory {
             .use(this.metadataMiddleware.bind(this)(definition.name))
             .use(this.errorHandlerMiddleware.bind(this))
             .use(deadlineMiddleware)
-            .create(definition, channelImplementation)
+            .create(definition, channelImplementation, {
+                '*': { deadline: this.defaultDeadlineMs },
+            })
     }
 
     private metadataMiddleware(

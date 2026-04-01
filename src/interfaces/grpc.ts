@@ -4,6 +4,10 @@ import { CallOptions as DefaultGrpcCallOptions } from 'nice-grpc'
 import { ActionVersion } from '@diia-inhouse/types'
 import { ActionSession } from '@diia-inhouse/types/dist/types/session/session'
 
+export interface GrpcClientConfig {
+    defaultDeadlineMs?: number
+}
+
 export interface GrpcServerConfig {
     isEnabled: boolean
     port: number

@@ -2,6 +2,7 @@ import { IdentifierConfig } from '@diia-inhouse/crypto'
 import { EnvService } from '@diia-inhouse/env'
 import { HealthCheckConfig } from '@diia-inhouse/healthcheck'
 import { RedisConfig } from '@diia-inhouse/redis'
+import { DurationMs } from '@diia-inhouse/types'
 
 import { BalancingStrategy, BaseConfig, TransporterConfig } from '../../src/interfaces'
 
@@ -70,6 +71,10 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
             maxAge: 1800,
             methods: [],
             origins: [],
+        },
+
+        grpcClient: {
+            defaultDeadlineMs: EnvService.getVar('GRPC_CLIENT_DEFAULT_DEADLINE_MS', 'number', Number(DurationMs.Second)),
         },
 
         grpcServer: {

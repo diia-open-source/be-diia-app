@@ -7,6 +7,7 @@ import TestKit from '@diia-inhouse/test'
 import { ActionVersion, grpcMetadataKeys } from '@diia-inhouse/types'
 
 import { GrpcClientFactory, clientCallOptions } from '../../../src/grpc'
+import { BaseConfig } from '../../../src/interfaces'
 
 const generatorValue = 'generatorResult'
 
@@ -88,7 +89,9 @@ describe('grpcClientFactory', () => {
     const logger = mock<DiiaLogger>()
     const metrics = mock<MetricsService>()
 
-    const grpcClientFactory = new GrpcClientFactory(serviceName, logger, metrics)
+    const config = mock<BaseConfig>()
+
+    const grpcClientFactory = new GrpcClientFactory(config, serviceName, logger, metrics)
 
     it('should create client', async () => {
         const definition: TsProtoServiceDefinition = { name: 'Test', fullName: 'ua.Test', methods: {} }
