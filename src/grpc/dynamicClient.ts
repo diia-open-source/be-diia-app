@@ -189,6 +189,12 @@ export class DynamicGrpcClient {
                 continue
             }
 
+            // Coerce string query params to matching scalar types
+            if (typeof value === 'string' && this.isBuiltinType(field.type)) {
+                result[field.name] = this.coerceScalar(field.type, value)
+                continue
+            }
+
             let resolvedType = field.resolvedType
             if (!resolvedType && field.type && !this.isBuiltinType(field.type)) {
                 try {
@@ -360,6 +366,34 @@ export class DynamicGrpcClient {
         return unresolved
     }
 
+    private coerceScalar(fieldType: string, value: string): unknown {
+        if (fieldType === 'bool') {
+            return value === 'true' || value === '1'
+        }
+
+        const numericTypes = [
+            'double',
+            'float',
+            'int32',
+            'int64',
+            'uint32',
+            'uint64',
+            'sint32',
+            'sint64',
+            'fixed32',
+            'fixed64',
+            'sfixed32',
+            'sfixed64',
+        ]
+        if (numericTypes.includes(fieldType)) {
+            const num = Number(value)
+
+            return Number.isNaN(num) ? value : num
+        }
+
+        return value
+    }
+
     private isBuiltinType(typeName: string): boolean {
         const builtins = [
             'double',
@@ -383,17 +417,41 @@ export class DynamicGrpcClient {
     }
 
     private mergeDescriptorsIntoRoot(root: protobuf.Root, fileDescriptors: Buffer[]): void {
+        const decoded: unknown[] = []
         for (const buffer of fileDescriptors) {
             try {
-                const fileDescriptor = FileDescriptorProto.decode(buffer)
-                const parsed = RootWithDescriptor.fromDescriptor({ file: [fileDescriptor] })
-
-                for (const nested of parsed.nestedArray) {
-                    this.mergeIntoNamespace(root, nested)
-                }
+                decoded.push(FileDescriptorProto.decode(buffer))
             } catch (err) {
-                this.logger.warn('Failed to parse file descriptor', { err })
+                this.logger.warn('Failed to decode file descriptor', { err })
             }
+        }
+
+        if (decoded.length === 0) {
+            return
+        }
+
+        // protobufjs 7.5+ calls resolveAll() inside fromDescriptor(), which throws
+        // when transitive proto dependencies are missing from the descriptor set.
+        // Make it tolerant so types are added even with unresolved references —
+        // resolveAllTypes() handles missing types via reflection or placeholders.
+        const originalResolveAll = protobuf.Root.prototype.resolveAll
+        protobuf.Root.prototype.resolveAll = function tolerantResolveAll(this: protobuf.Root): protobuf.Root {
+            try {
+                return originalResolveAll.call(this) as protobuf.Root
+            } catch {
+                return this
+            }
+        }
+
+        try {
+            const parsed = RootWithDescriptor.fromDescriptor({ file: decoded })
+            for (const nested of parsed.nestedArray) {
+                this.mergeIntoNamespace(root, nested)
+            }
+        } catch (err) {
+            this.logger.warn('Failed to parse file descriptors', { err })
+        } finally {
+            protobuf.Root.prototype.resolveAll = originalResolveAll
         }
     }
 
