@@ -193,7 +193,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             metadata.set(grpcMetadataKeys.STREAM_ID, streamId)
 
             const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
-            const actionInstance = this.getActionInstance(headers.actionVersion, actions) as GrpcServerStreamAction
+            const actionInstance = this.getActionInstance(headers.actionVersion || ActionVersion.V1, actions) as GrpcServerStreamAction
             const mobileUid = headers.mobileUid
 
             let tracing: MetaTracing | undefined
@@ -402,7 +402,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                 try {
                     const { metadata, request: params } = input
                     const headers = this.prepareActHeadersFromGrpcInput(metadata, Array.from(actions.keys()))
-                    const actionInstance = this.getActionInstance(headers.actionVersion, actions)
+                    const actionInstance = this.getActionInstance(headers.actionVersion || ActionVersion.V1, actions)
 
                     if (actionInstance.grpcMethod?.path) {
                         span.updateName(`start ${actionInstance.grpcMethod?.path}`)
