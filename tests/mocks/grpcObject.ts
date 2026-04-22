@@ -13,6 +13,20 @@ interface GrpcActionErrorArguments extends ServiceActionArguments<AppUserActionH
     params: { param: string; processCode?: number }
 }
 
+export const grpcObjectWithStreamAction: GrpcObject = {
+    'service-with-stream-action': {
+        service: {
+            action: {
+                originalName: 'action',
+                path: '/action',
+                responseStream: true,
+                requestStream: false,
+            },
+        } as unknown as ServiceDefinition,
+        serviceName: 'action',
+    } as ServiceClientConstructor,
+}
+
 export const grpcObjectWithAction: GrpcObject = {
     'service-with-action': {
         service: {

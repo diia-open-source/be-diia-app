@@ -4,12 +4,14 @@ import { cloneDeep, set } from 'lodash'
 import { mock } from 'vitest-mock-extended'
 
 import Logger from '@diia-inhouse/diia-logger'
+import { ApiError } from '@diia-inhouse/errors'
+import { FeatureService } from '@diia-inhouse/features'
 import TestKit from '@diia-inhouse/test'
 import { ActionVersion, HttpStatusCode } from '@diia-inhouse/types'
 import { utils } from '@diia-inhouse/utils'
 
 import { ActionExecutor, GrpcServerConfig, GrpcService } from '../../../src'
-import { GrpcAction, grpcObjectWithAction, grpcObjectWithActionError } from '../../mocks'
+import { GrpcAction, grpcObjectWithAction, grpcObjectWithActionError, grpcObjectWithStreamAction } from '../../mocks'
 
 vi.mock('@grpc/proto-loader')
 vi.mock('@grpc/reflection')
@@ -44,6 +46,7 @@ const serviceName = 'ServiceName'
 describe(`${GrpcService.name}`, () => {
     const testKit = new TestKit()
     const actionExecutor = mock<ActionExecutor>()
+    const featureFlag = mock<FeatureService>({ isEnabled: vi.fn() })
     const logger = mock<Logger>({ info: vi.fn() })
     const config: GrpcServerConfig = {
         isEnabled: true,
@@ -65,6 +68,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             await grpcService.onInit()
@@ -81,6 +85,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce({ ...grpcObjectWithAction, ...grpcObjectWithActionError })
@@ -100,6 +105,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(
@@ -122,6 +128,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
@@ -145,6 +152,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithAction)
@@ -184,6 +192,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithAction)
@@ -202,6 +211,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
@@ -228,6 +238,7 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
@@ -253,11 +264,156 @@ describe(`${GrpcService.name}`, () => {
                 systemServiceName,
                 serviceName,
                 undefined,
+                featureFlag,
             )
 
             await expect(grpcService.onHealthCheck()).resolves.toEqual({
                 status: HttpStatusCode.SERVICE_UNAVAILABLE,
                 details: { grpcServer: 'UNKNOWN' },
+            })
+        })
+    })
+
+    describe('stream grpc implementation', () => {
+        describe('handler execution failed', () => {
+            it('should not end stream when action execution fails and feature flag is disabled', async () => {
+                // Arrange
+                actionExecutor.execute.mockRejectedValueOnce(new ApiError('forbidden', HttpStatusCode.FORBIDDEN))
+
+                const handlers: ((input: unknown) => Promise<void>)[] = []
+                const streamConfig: GrpcServerConfig = {
+                    ...config,
+                    services: ['service-with-stream-action'],
+                }
+
+                const grpcService = new GrpcService(
+                    { grpcServer: streamConfig },
+                    [new GrpcAction()],
+                    logger,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                featureFlag.isEnabled.mockReturnValueOnce(false)
+
+                vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithStreamAction)
+                vi.spyOn(Server.prototype, 'addService').mockImplementation((_service, implementation) => {
+                    for (const key in implementation) {
+                        handlers.push(implementation[key] as (input: unknown) => Promise<void>)
+                    }
+                })
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                await grpcService.onInit()
+
+                const listeners = new Map<string, (...args: unknown[]) => unknown>()
+                const input = {
+                    metadata: new Metadata(),
+                    request: undefined,
+                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    write: vi.fn(),
+                    end: vi.fn(),
+                    emit: vi.fn(),
+                    destroy: vi.fn(),
+                }
+
+                // Act
+                await handlers[0](input)
+
+                const dataListener = listeners.get('data')
+
+                await dataListener?.({ payload: 'x' })
+
+                // Assert
+                expect(dataListener).toBeDefined()
+                expect(input.end).not.toHaveBeenCalled()
+            })
+
+            it('should end stream with rpc error when action execution fails and feature flag is enabled', async () => {
+                // Arrange
+                actionExecutor.execute.mockRejectedValueOnce(new ApiError('forbidden', HttpStatusCode.FORBIDDEN))
+
+                const handlers: ((input: unknown) => Promise<void>)[] = []
+                const streamConfig: GrpcServerConfig = {
+                    ...config,
+                    services: ['service-with-stream-action'],
+                }
+
+                const grpcService = new GrpcService(
+                    { grpcServer: streamConfig },
+                    [new GrpcAction()],
+                    logger,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                featureFlag.isEnabled.mockReturnValueOnce(true)
+
+                vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithStreamAction)
+                vi.spyOn(Server.prototype, 'addService').mockImplementation((_service, implementation) => {
+                    for (const key in implementation) {
+                        handlers.push(implementation[key] as (input: unknown) => Promise<void>)
+                    }
+                })
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                await grpcService.onInit()
+
+                const listeners = new Map<string, (...args: unknown[]) => unknown>()
+                const input = {
+                    metadata: new Metadata(),
+                    request: undefined,
+                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    write: vi.fn(),
+                    end: vi.fn(),
+                    emit: vi.fn(),
+                    destroy: vi.fn(),
+                }
+
+                // Act
+                await handlers[0](input)
+
+                const dataListener = listeners.get('data')
+
+                await dataListener?.({ payload: 'x' })
+
+                // Assert
+                expect(dataListener).toBeDefined()
+                expect(input.end).toHaveBeenCalledTimes(1)
+                expect(input.end).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        code: grpc.status.PERMISSION_DENIED,
+                        details: 'forbidden',
+                    }),
+                )
             })
         })
     })

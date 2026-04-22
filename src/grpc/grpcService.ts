@@ -14,6 +14,7 @@ import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@op
 
 import { RequestMechanism } from '@diia-inhouse/diia-metrics'
 import { ApiError, HttpError } from '@diia-inhouse/errors'
+import { FeatureService } from '@diia-inhouse/features'
 import type { HealthCheck } from '@diia-inhouse/healthcheck'
 import {
     ActionVersion,
@@ -38,6 +39,7 @@ import {
     AppAction,
     BaseConfig,
     ErrorCode,
+    FeatureFlags,
     GrpcAppAction,
     GrpcMethodType,
     GrpcServerStreamAction,
@@ -83,6 +85,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         private readonly systemServiceName: string,
         private readonly serviceName: string,
         private readonly healthCheck: HealthCheck | undefined,
+        private readonly featureFlag: FeatureService | null = null,
     ) {
         if (!this.config.grpcServer?.isEnabled) {
             this.logger.info('grpc server disabled')
@@ -362,7 +365,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                                 input.write(response)
                             }
                         } catch (err) {
-                            utils.handleError(err, (error) => {
+                            const apiErr = utils.handleError(err, (error) => {
                                 dataSpan.recordException({
                                     message: error.getMessage(),
                                     code: error.getCode(),
@@ -370,7 +373,18 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                                 })
                                 dataSpan.setStatus({ code: SpanStatusCode.ERROR, message: error.getMessage() })
                                 this.logger.error('Failed to open action connection', { err: error })
+
+                                return error
                             })
+
+                            if (this.featureFlag && this.featureFlag.isEnabled(FeatureFlags.DiiaAppStreamGrpcEndOnHandlerError)) {
+                                const responseMetadata = new Metadata()
+                                const rpcError = this.mapApiErrorToRpcError(apiErr, responseMetadata)
+
+                                input.end(rpcError)
+
+                                return
+                            }
                         } finally {
                             dataSpan.end()
                         }

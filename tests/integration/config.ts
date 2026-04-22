@@ -84,4 +84,10 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
             isReflectionEnabled: EnvService.getVar('GRPC_REFLECTION_ENABLED', 'boolean', false),
             maxReceiveMessageLength: EnvService.getVar('GRPC_SERVER_MAX_RECEIVE_MESSAGE_LENGTH', 'number', 1024 * 1024 * 4),
         },
+
+        featureFlags: {
+            isEnabled: EnvService.getVar('FEATURE_FLAGS_IS_ENABLED', 'boolean', false),
+            url: EnvService.getVar('FEATURE_FLAGS_URL', 'string', 'http://localhost:3000'),
+            apiToken: EnvService.getVar('FEATURE_FLAGS_API_TOKEN', 'string', 'test-token'),
+        },
     }) satisfies BaseConfig & Record<string, unknown>

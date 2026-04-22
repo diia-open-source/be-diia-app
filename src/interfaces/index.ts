@@ -11,3 +11,5 @@ export * from './grpc'
 export * from './actionExecutor'
 
 export * from './errorCode'
+
+export * from './featureFlag'
