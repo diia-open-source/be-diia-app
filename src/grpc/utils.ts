@@ -15,3 +15,7 @@ export function bindAsyncGenerator<T = unknown, TReturn = any, TNext = unknown>(
         },
     }
 }
+
+export function hasProperty<K extends PropertyKey>(value: unknown, key: K): value is Record<K, unknown> {
+    return typeof value === 'object' && value !== null && key in value
+}

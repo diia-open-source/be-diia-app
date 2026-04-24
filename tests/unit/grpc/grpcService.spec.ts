@@ -407,11 +407,87 @@ describe(`${GrpcService.name}`, () => {
 
                 // Assert
                 expect(dataListener).toBeDefined()
-                expect(input.end).toHaveBeenCalledTimes(1)
-                expect(input.end).toHaveBeenCalledWith(
+                expect(input.emit).toHaveBeenCalledTimes(1)
+                expect(input.emit).toHaveBeenCalledWith(
+                    'error',
                     expect.objectContaining({
                         code: grpc.status.PERMISSION_DENIED,
                         details: 'forbidden',
+                    }),
+                )
+            })
+
+            it('should end stream with rpc error when handler returns error response and feature flag is enabled', async () => {
+                // Arrange
+                actionExecutor.execute.mockResolvedValueOnce({ error: 'handler failed' })
+
+                const handlers: ((input: unknown) => Promise<void>)[] = []
+                const streamConfig: GrpcServerConfig = {
+                    ...config,
+                    services: ['service-with-stream-action'],
+                }
+
+                const grpcService = new GrpcService(
+                    { grpcServer: streamConfig },
+                    [new GrpcAction()],
+                    logger,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                featureFlag.isEnabled.mockReturnValueOnce(true)
+
+                vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithStreamAction)
+                vi.spyOn(Server.prototype, 'addService').mockImplementation((_service, implementation) => {
+                    for (const key in implementation) {
+                        handlers.push(implementation[key] as (input: unknown) => Promise<void>)
+                    }
+                })
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                await grpcService.onInit()
+
+                const listeners = new Map<string, (...args: unknown[]) => unknown>()
+                const input = {
+                    metadata: new Metadata(),
+                    request: undefined,
+                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    write: vi.fn(),
+                    end: vi.fn(),
+                    emit: vi.fn(),
+                    destroy: vi.fn(),
+                }
+
+                // Act
+                await handlers[0](input)
+
+                const dataListener = listeners.get('data')
+
+                await dataListener?.({ payload: 'x' })
+
+                // Assert
+                expect(dataListener).toBeDefined()
+                expect(input.write).not.toHaveBeenCalled()
+                expect(input.emit).toHaveBeenCalledTimes(1)
+                expect(input.emit).toHaveBeenCalledWith(
+                    'error',
+                    expect.objectContaining({
+                        code: grpc.status.INTERNAL,
+                        details: 'handler failed',
                     }),
                 )
             })

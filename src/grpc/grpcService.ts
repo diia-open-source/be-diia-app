@@ -48,6 +48,7 @@ import {
 } from '../interfaces'
 import { OnInitResults } from '../interfaces/onInitResults'
 import { GrpcServer } from './server'
+import { hasProperty } from './utils'
 import { registerWrappers } from './wrappers'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
@@ -358,8 +359,23 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                             stream_id: streamId,
                         })
 
+                        const isStreamGrpcEndOnHandlerErrorFeatureFlagEnabled = this.featureFlag?.isEnabled(
+                            FeatureFlags.DiiaAppStreamGrpcEndOnHandlerError,
+                        )
+
                         try {
                             const response = await this.executeAction(actionInstance, metadata, headers, data)
+
+                            if (hasProperty(response, 'error') && isStreamGrpcEndOnHandlerErrorFeatureFlagEnabled) {
+                                const errorMessage = typeof response.error === 'string' ? response.error : 'Internal server error'
+
+                                const apiErr = new ApiError(errorMessage, HttpStatusCode.INTERNAL_SERVER_ERROR)
+                                const rpcError = this.prepareServerErrorResponse(apiErr)
+
+                                input.emit('error', rpcError)
+
+                                return
+                            }
 
                             if (response) {
                                 input.write(response)
@@ -377,13 +393,10 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                                 return error
                             })
 
-                            if (this.featureFlag && this.featureFlag.isEnabled(FeatureFlags.DiiaAppStreamGrpcEndOnHandlerError)) {
-                                const responseMetadata = new Metadata()
-                                const rpcError = this.mapApiErrorToRpcError(apiErr, responseMetadata)
+                            if (isStreamGrpcEndOnHandlerErrorFeatureFlagEnabled) {
+                                const rpcError = this.prepareServerErrorResponse(apiErr)
 
-                                input.end(rpcError)
-
-                                return
+                                input.emit('error', rpcError)
                             }
                         } finally {
                             dataSpan.end()
@@ -661,5 +674,9 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                 }
             }
         }
+    }
+
+    private prepareServerErrorResponse(apiErr: ApiError, metadata = new Metadata()): ServerErrorResponse {
+        return this.mapApiErrorToRpcError(apiErr, metadata)
     }
 }
