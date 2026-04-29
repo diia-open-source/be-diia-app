@@ -492,5 +492,145 @@ describe(`${GrpcService.name}`, () => {
                 )
             })
         })
+
+        describe('handler execution success', () => {
+            it('should not end stream when action execution success and feature flag is disabled', async () => {
+                // Arrange
+                actionExecutor.execute.mockResolvedValueOnce({ result: 'ok' })
+
+                const handlers: ((input: unknown) => Promise<void>)[] = []
+                const streamConfig: GrpcServerConfig = {
+                    ...config,
+                    services: ['service-with-stream-action'],
+                }
+
+                const grpcService = new GrpcService(
+                    { grpcServer: streamConfig },
+                    [new GrpcAction()],
+                    logger,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                featureFlag.isEnabled.mockReturnValueOnce(false)
+
+                vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithStreamAction)
+                vi.spyOn(Server.prototype, 'addService').mockImplementation((_service, implementation) => {
+                    for (const key in implementation) {
+                        handlers.push(implementation[key] as (input: unknown) => Promise<void>)
+                    }
+                })
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                await grpcService.onInit()
+
+                const listeners = new Map<string, (...args: unknown[]) => unknown>()
+                const input = {
+                    metadata: new Metadata(),
+                    request: undefined,
+                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    write: vi.fn(),
+                    end: vi.fn(),
+                    emit: vi.fn(),
+                    destroy: vi.fn(),
+                }
+
+                // Act
+                await handlers[0](input)
+
+                const dataListener = listeners.get('data')
+
+                await dataListener?.({ payload: 'x' })
+
+                // Assert
+                expect(dataListener).toBeDefined()
+                expect(input.write).toHaveBeenCalledWith({ result: 'ok' })
+                expect(input.end).not.toHaveBeenCalled()
+                expect(input.emit).not.toHaveBeenCalledWith('error', expect.anything())
+            })
+
+            it('should not end stream when action execution success and feature flag is enabled', async () => {
+                // Arrange
+                actionExecutor.execute.mockResolvedValueOnce({ result: 'ok' })
+
+                const handlers: ((input: unknown) => Promise<void>)[] = []
+                const streamConfig: GrpcServerConfig = {
+                    ...config,
+                    services: ['service-with-stream-action'],
+                }
+
+                const grpcService = new GrpcService(
+                    { grpcServer: streamConfig },
+                    [new GrpcAction()],
+                    logger,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                featureFlag.isEnabled.mockReturnValueOnce(true)
+
+                vi.spyOn(grpc, 'loadPackageDefinition').mockReturnValueOnce(grpcObjectWithStreamAction)
+                vi.spyOn(Server.prototype, 'addService').mockImplementation((_service, implementation) => {
+                    for (const key in implementation) {
+                        handlers.push(implementation[key] as (input: unknown) => Promise<void>)
+                    }
+                })
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                const listeners = new Map<string, (...args: unknown[]) => unknown>()
+                const input = {
+                    metadata: new Metadata(),
+                    request: undefined,
+                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
+                        listeners.set(event, handler)
+
+                        return input
+                    }),
+                    write: vi.fn(),
+                    end: vi.fn(),
+                    emit: vi.fn(),
+                    destroy: vi.fn(),
+                }
+
+                await grpcService.onInit()
+
+                // Act
+                await handlers[0](input)
+
+                const dataListener = listeners.get('data')
+
+                await dataListener?.({ payload: 'x' })
+
+                // Assert
+                expect(dataListener).toBeDefined()
+                expect(input.write).toHaveBeenCalledWith({ result: 'ok' })
+                expect(input.end).not.toHaveBeenCalled()
+                expect(input.emit).not.toHaveBeenCalledWith('error', expect.anything())
+            })
+        })
     })
 })

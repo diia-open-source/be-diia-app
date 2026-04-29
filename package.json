@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "31.9.6",
+    "version": "31.9.7",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
     "types": "dist/types/index.d.ts",
@@ -27,7 +27,7 @@
         "lint-fix": "eslint . --fix && prettier --write .",
         "lint:lockfile": "lockfile-lint --path package-lock.json --allowed-hosts registry.npmjs.org --validate-https",
         "pretest": "npm run genproto-test",
-        "test": "tsc --project tests/tsconfig.json && vitest run",
+        "test": "npm run genproto -- --generateClient=true && tsc --project tests/tsconfig.json && vitest run",
         "test:watch": "vitest watch",
         "find-circulars": "madge --circular --extensions ts ./",
         "genproto-test": "genproto --rootDir tests/integration/proto --outputDir tests/integration/generated --generateClient=true --entrypoint tests/integration/proto/test-service.proto"

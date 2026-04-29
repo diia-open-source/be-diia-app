@@ -366,7 +366,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                         try {
                             const response = await this.executeAction(actionInstance, metadata, headers, data)
 
-                            if (hasProperty(response, 'error') && isStreamGrpcEndOnHandlerErrorFeatureFlagEnabled) {
+                            if (hasProperty(response, 'error') && response.error && isStreamGrpcEndOnHandlerErrorFeatureFlagEnabled) {
                                 const errorMessage = typeof response.error === 'string' ? response.error : 'Internal server error'
 
                                 const apiErr = new ApiError(errorMessage, HttpStatusCode.INTERNAL_SERVER_ERROR)
