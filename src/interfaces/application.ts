@@ -4,9 +4,9 @@ import { NameFormatter } from 'awilix/lib/load-modules'
 import { EnvService } from '@diia-inhouse/env'
 import { GenericObject, OnInit } from '@diia-inhouse/types'
 
-import { BaseConfig } from './config'
-import { BaseDeps } from './deps'
-import { OnInitResults } from './onInitResults'
+import { BaseConfig } from './config.js'
+import { BaseDeps } from './deps.js'
+import { OnInitResults } from './onInitResults.js'
 
 export interface ServiceContext<TConfig extends BaseConfig = BaseConfig, TDeps extends object = object> {
     config: TConfig

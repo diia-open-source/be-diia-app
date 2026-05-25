@@ -1,8 +1,8 @@
 import { Metadata, ServiceClientConstructor, credentials, loadPackageDefinition } from '@grpc/grpc-js'
 import { loadSync } from '@grpc/proto-loader'
 
-import { schemaReflectionProtoPath } from './grpcSchemaService'
-import { HttpMapping, PROTO_LOADER_OPTIONS, ServiceSchemaDto } from './types'
+import { schemaReflectionProtoPath } from './grpcSchemaService.js'
+import { HttpMapping, PROTO_LOADER_OPTIONS, ServiceSchemaDto } from './types.js'
 
 export interface DiscoveredAction {
     name: string

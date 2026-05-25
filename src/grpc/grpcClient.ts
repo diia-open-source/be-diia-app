@@ -19,11 +19,11 @@ import { ApiError } from '@diia-inhouse/errors'
 import { DurationMs, GrpcStatusCode, LogData, Logger, grpcMetadataKeys } from '@diia-inhouse/types'
 import { NetworkUtils, utils } from '@diia-inhouse/utils'
 
-import { BaseConfig } from '../interfaces/config'
-import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc'
-import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing'
-import { bindAsyncGenerator } from './utils'
-import { registerWrappers } from './wrappers'
+import { BaseConfig } from '../interfaces/config.js'
+import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc.js'
+import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing.js'
+import { bindAsyncGenerator } from './utils.js'
+import { registerWrappers } from './wrappers.js'
 
 export class GrpcClientFactory {
     private readonly defaultDeadlineMs: number
@@ -72,7 +72,7 @@ export class GrpcClientFactory {
         call: ClientMiddlewareCall<Request, Response>,
         options: CallOptions,
     ) => AsyncGenerator<Awaited<Response>, void | Awaited<Response>, undefined> {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias, unicorn/no-this-assignment
+        // oxlint-disable-next-line typescript/no-this-alias
         const self = this
 
         return async function* <Request, Response>(
@@ -143,7 +143,7 @@ export class GrpcClientFactory {
                     if ((value as string[]).length > 1) {
                         span.setAttribute(ATTR_RPC_GRPC_REQUEST_METADATA(key), value as string[])
                     } else if ((value as string[]).length === 1) {
-                        span.setAttribute(ATTR_RPC_GRPC_REQUEST_METADATA(key), (value as string[])[0] as string)
+                        span.setAttribute(ATTR_RPC_GRPC_REQUEST_METADATA(key), (value as string[])[0])
                     }
                 } catch {
                     // ignore result

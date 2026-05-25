@@ -1,12 +1,11 @@
 import { MethodDefinition } from '@grpc/grpc-js'
 
 import { BadRequestError } from '@diia-inhouse/errors'
-import { ActionContext, ActionVersion, BaseSession, GenericObject } from '@diia-inhouse/types'
-import { ActHeaders } from '@diia-inhouse/types/dist/types/common'
+import { ActHeaders, ActionContext, ActionVersion, BaseSession, GenericObject } from '@diia-inhouse/types'
 import { ValidationSchema } from '@diia-inhouse/validators'
 
-import { ErrorCode } from './errorCode'
-import { DeviceMultipleConnectionPolicy, StreamKey } from './grpc'
+import { ErrorCode } from './errorCode.js'
+import { DeviceMultipleConnectionPolicy, StreamKey } from './grpc.js'
 
 export interface AppAction<T extends ActionContext<Record<never, never>, BaseSession> = ActionContext<Record<never, never>, BaseSession>> {
     sessionType: T['session']['sessionType'] | readonly T['session']['sessionType'][]
@@ -87,7 +86,7 @@ export abstract class GrpcServerStreamAction<
             default: {
                 const unhandledPolicy: never = this.deviceMultipleConnectionPolicy
 
-                throw new TypeError(`Unhandled deviceMultipleConnectionPolicy: ${unhandledPolicy}`)
+                throw new TypeError(`Unhandled deviceMultipleConnectionPolicy: ${String(unhandledPolicy)}`)
             }
         }
 

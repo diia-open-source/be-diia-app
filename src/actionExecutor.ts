@@ -22,9 +22,9 @@ import {
 import { utils } from '@diia-inhouse/utils'
 import { AppValidator } from '@diia-inhouse/validators'
 
-import { AppAction, GrpcAppAction } from './interfaces'
-import { ExecuteActionParams } from './interfaces/actionExecutor'
-import { ATTR_MESSAGE_ID, ATTR_MESSAGE_TYPE, ATTR_MESSAGING_SYSTEM } from './interfaces/tracing'
+import { ExecuteActionParams } from './interfaces/actionExecutor.js'
+import { AppAction, GrpcAppAction } from './interfaces/index.js'
+import { ATTR_MESSAGE_ID, ATTR_MESSAGE_TYPE, ATTR_MESSAGING_SYSTEM } from './interfaces/tracing.js'
 
 export class ActionExecutor {
     private readonly actionLockTtl = 30000
@@ -38,8 +38,8 @@ export class ActionExecutor {
         private readonly redlock: RedlockService | null = null,
     ) {}
 
-    async execute(params: ExecuteActionParams): Promise<unknown> {
-        const { action, transport, tracingMetadata, spanKind, actionArguments } = params
+    async execute(executeParams: ExecuteActionParams): Promise<unknown> {
+        const { action, transport, tracingMetadata, spanKind, actionArguments } = executeParams
 
         const tracer = trace.getTracer(this.systemServiceName)
 
@@ -197,7 +197,7 @@ export class ActionExecutor {
                     partner: { _id: id },
                 } = session as PartnerSession
 
-                logData.sessionOwnerId = id.toString()
+                logData.sessionOwnerId = id
 
                 break
             }
@@ -206,7 +206,7 @@ export class ActionExecutor {
                     acquirer: { _id: id },
                 } = session as AcquirerSession
 
-                logData.sessionOwnerId = id.toString()
+                logData.sessionOwnerId = id
 
                 break
             }
@@ -224,7 +224,7 @@ export class ActionExecutor {
                     entrance: { acquirerId },
                 } = session as ServiceEntranceSession
 
-                logData.sessionOwnerId = acquirerId.toString()
+                logData.sessionOwnerId = acquirerId
 
                 break
             }
@@ -234,7 +234,7 @@ export class ActionExecutor {
             default: {
                 const unexpectedSessionType: never = sessionType
 
-                this.logger.warn(`Unexpected session type for the logData: ${unexpectedSessionType}`)
+                this.logger.warn(`Unexpected session type for the logData: ${String(unexpectedSessionType)}`)
             }
         }
 

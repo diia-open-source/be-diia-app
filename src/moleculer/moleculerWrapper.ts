@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 
 import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
 import cookieParser from 'cookie-parser'
-import { extend } from 'lodash'
+import lodash from 'lodash'
 import {
     ActionHandler,
     ActionSchema,
@@ -34,12 +34,15 @@ import {
 } from '@diia-inhouse/types'
 import { utils } from '@diia-inhouse/utils'
 
-import { ActionExecutor } from '../actionExecutor'
-import { AppAction, AppApiService, BaseConfig } from '../interfaces'
-import { ContextMeta } from '../interfaces/moleculer'
-import { ATTR_MESSAGING_DESTINATION_NAME, ATTR_MESSAGING_SYSTEM } from '../interfaces/tracing'
-import { ACTION_PARAMS, ACTION_RESPONSE } from '../plugins/pluginConstants'
-import MoleculerLogger from './moleculerLogger'
+import { ActionExecutor } from '../actionExecutor.js'
+import { AppAction, AppApiService, BaseConfig } from '../interfaces/index.js'
+import { ContextMeta } from '../interfaces/moleculer.js'
+import { ATTR_MESSAGING_DESTINATION_NAME, ATTR_MESSAGING_SYSTEM } from '../interfaces/tracing.js'
+import { ACTION_PARAMS, ACTION_RESPONSE } from '../plugins/pluginConstants.js'
+import MoleculerLogger from './moleculerLogger.js'
+
+// oxlint-disable-next-line typescript/unbound-method, @diia-inhouse/class/no-module-level-const
+const { extend } = lodash
 
 export default class MoleculerService implements OnInit, OnDestroy {
     serviceBroker: ServiceBroker
@@ -152,14 +155,14 @@ export default class MoleculerService implements OnInit, OnDestroy {
                 const type = apiErr.getType()
                 const code = apiErr.getCode()
                 const message = apiErr.getMessage()
-                const name = apiErr.getName()
+                const errorName = apiErr.getName()
 
                 data.opOriginalError ||= { type }
 
                 span?.recordException({
                     message,
                     code,
-                    name,
+                    name: errorName,
                 })
 
                 span?.setStatus({ code: SpanStatusCode.ERROR, message })

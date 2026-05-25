@@ -2,7 +2,7 @@ import { Metadata } from '@grpc/grpc-js'
 
 import { Logger } from '@diia-inhouse/types'
 
-import { DynamicGrpcClient, DynamicGrpcClientOptions } from './dynamicClient'
+import { DynamicGrpcClient, DynamicGrpcClientOptions } from './dynamicClient.js'
 
 export interface GrpcExecuteParams {
     serviceId: string

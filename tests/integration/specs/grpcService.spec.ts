@@ -1,8 +1,7 @@
 import { ErrorType } from '@diia-inhouse/errors'
 import { RedlockService } from '@diia-inhouse/redis'
 import TestKit from '@diia-inhouse/test'
-import { HttpStatusCode, SessionType } from '@diia-inhouse/types'
-import { GenericObject } from '@diia-inhouse/types/dist/types/common'
+import { GenericObject, HttpStatusCode, SessionType } from '@diia-inhouse/types'
 
 import { GrpcService, clientCallOptions } from '../../../src'
 import { TestClient, TestPrivateClient } from '../generated'

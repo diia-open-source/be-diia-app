@@ -1,14 +1,17 @@
+import { createRequire } from 'node:module'
 import path from 'node:path'
 
 import { ChannelCredentials, Client, Metadata, ServiceError, credentials, loadPackageDefinition } from '@grpc/grpc-js'
 import { loadSync } from '@grpc/proto-loader'
 import protobuf from 'protobufjs'
-import descriptorExt from 'protobufjs/ext/descriptor'
+import descriptorExt from 'protobufjs/ext/descriptor/index.js'
 
 import { Logger } from '@diia-inhouse/types'
 
-import { PROTO_LOADER_OPTIONS } from './schemaReflection/types'
-import { registerWrappers } from './wrappers'
+import { PROTO_LOADER_OPTIONS } from './schemaReflection/types.js'
+import { registerWrappers } from './wrappers.js'
+
+const requireFromHere = createRequire(import.meta.url)
 
 const DEFAULT_REFLECTION_TIMEOUT_MS = 15_000
 const DEFAULT_CALL_TIMEOUT_MS = 30_000
@@ -53,6 +56,16 @@ export interface DynamicCallParams {
 
 interface ReflectionClient extends Client {
     ServerReflectionInfo(metadata?: Metadata): ReturnType<Client['makeBidiStreamRequest']>
+}
+
+interface ParsedMethodPath {
+    serviceName: string
+    methodName: string
+}
+
+interface MethodTypes {
+    RequestType: protobuf.Type
+    ResponseType: protobuf.Type
 }
 
 interface FileDescriptorResponse {
@@ -130,7 +143,7 @@ export class DynamicGrpcClient {
         this.schemaCache.clear()
     }
 
-    private parseMethodPath(method: string): { serviceName: string; methodName: string } {
+    private parseMethodPath(method: string): ParsedMethodPath {
         const match = method.match(/^\/(.+)\/([^/]+)$/)
         if (!match) {
             throw new Error(`Invalid method format: ${method}. Expected: /package.Service/Method`)
@@ -139,11 +152,7 @@ export class DynamicGrpcClient {
         return { serviceName: match[1], methodName: match[2] }
     }
 
-    private getMethodTypes(
-        root: protobuf.Root,
-        serviceName: string,
-        methodName: string,
-    ): { RequestType: protobuf.Type; ResponseType: protobuf.Type } {
+    private getMethodTypes(root: protobuf.Root, serviceName: string, methodName: string): MethodTypes {
         const service = root.lookupService(serviceName)
         const methodDef = service.methods[methodName]
         if (!methodDef) {
@@ -208,12 +217,12 @@ export class DynamicGrpcClient {
             if (resolvedType instanceof protobuf.Enum) {
                 result[field.name] =
                     field.repeated && Array.isArray(value)
-                        ? value.map((v) => this.convertSingleEnumValue(resolvedType as protobuf.Enum, v))
+                        ? value.map((v) => this.convertSingleEnumValue(resolvedType, v))
                         : this.convertSingleEnumValue(resolvedType, value)
             } else if (resolvedType instanceof protobuf.Type) {
                 result[field.name] =
                     field.repeated && Array.isArray(value)
-                        ? value.map((v) => this.convertEnumValues(resolvedType as protobuf.Type, v as object))
+                        ? value.map((v) => this.convertEnumValues(resolvedType, v as object))
                         : this.convertEnumValues(resolvedType, value as object)
             }
         }
@@ -221,7 +230,7 @@ export class DynamicGrpcClient {
         return result
     }
 
-    private convertSingleEnumValue(enumType: protobuf.Enum, value: unknown): number | unknown {
+    private convertSingleEnumValue(enumType: protobuf.Enum, value: unknown): unknown {
         if (typeof value === 'string') {
             const numericValue = enumType.values[value]
             if (numericValue !== undefined) {
@@ -434,6 +443,7 @@ export class DynamicGrpcClient {
         // when transitive proto dependencies are missing from the descriptor set.
         // Make it tolerant so types are added even with unresolved references —
         // resolveAllTypes() handles missing types via reflection or placeholders.
+        // oxlint-disable-next-line typescript/unbound-method
         const originalResolveAll = protobuf.Root.prototype.resolveAll
         protobuf.Root.prototype.resolveAll = function tolerantResolveAll(this: protobuf.Root): protobuf.Root {
             try {
@@ -614,7 +624,7 @@ export class DynamicGrpcClient {
      * If the package changes, this path resolution will fail.
      */
     private resolveReflectionProtoPath(): string {
-        const grpcReflectionDir = path.resolve(path.dirname(require.resolve('@grpc/reflection')), '..')
+        const grpcReflectionDir = path.resolve(path.dirname(requireFromHere.resolve('@grpc/reflection')), '..')
 
         return path.join(grpcReflectionDir, 'proto/grpc/reflection/v1/reflection.proto')
     }

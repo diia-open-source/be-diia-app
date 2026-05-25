@@ -22,19 +22,19 @@ vi.mock('@grpc/grpc-js', async (importOriginal) => {
         ...original,
         Server: class ServerMock {
             bindAsync(): unknown {
-                return vi.fn()
+                return vi.fn<() => unknown>()
             }
 
             tryShutdown(): unknown {
-                return vi.fn()
+                return vi.fn<() => unknown>()
             }
 
             addService(): unknown {
-                return vi.fn()
+                return vi.fn<() => unknown>()
             }
 
             forceShutdown(): unknown {
-                return vi.fn()
+                return vi.fn<() => unknown>()
             }
         },
     }
@@ -43,10 +43,12 @@ vi.mock('@grpc/grpc-js', async (importOriginal) => {
 const systemServiceName = 'service-name'
 const serviceName = 'ServiceName'
 
-describe(`${GrpcService.name}`, () => {
+describe(GrpcService.name, () => {
     const testKit = new TestKit()
     const actionExecutor = mock<ActionExecutor>()
+    // oxlint-disable-next-line vitest/require-mock-type-parameters
     const featureFlag = mock<FeatureService>({ isEnabled: vi.fn() })
+    // oxlint-disable-next-line vitest/require-mock-type-parameters
     const logger = mock<Logger>({ info: vi.fn() })
     const config: GrpcServerConfig = {
         isEnabled: true,
@@ -167,10 +169,10 @@ describe(`${GrpcService.name}`, () => {
 
             await grpcService.onInit()
 
-            await handlers[0](
+            handlers[0](
                 {
                     metadata: Metadata.fromHttp2Headers({ ...headers, session: sessionBase64 }),
-                    request: { param: `${HttpStatusCode}` },
+                    request: { param: 'value' },
                     sendMetadata: () => {},
                 } as unknown as ServerUnaryCall<{ params: { param: string } }, string>,
                 (err: unknown, resp) => {
@@ -315,20 +317,24 @@ describe(`${GrpcService.name}`, () => {
                 const input = {
                     metadata: new Metadata(),
                     request: undefined,
-                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                    addListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                            return input
+                        },
+                    ),
+                    prependListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    write: vi.fn(),
-                    end: vi.fn(),
-                    emit: vi.fn(),
-                    destroy: vi.fn(),
+                            return input
+                        },
+                    ),
+                    write: vi.fn<() => unknown>(),
+                    end: vi.fn<() => unknown>(),
+                    emit: vi.fn<() => unknown>(),
+                    destroy: vi.fn<() => unknown>(),
                 }
 
                 // Act
@@ -382,20 +388,24 @@ describe(`${GrpcService.name}`, () => {
                 const input = {
                     metadata: new Metadata(),
                     request: undefined,
-                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                    addListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                            return input
+                        },
+                    ),
+                    prependListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    write: vi.fn(),
-                    end: vi.fn(),
-                    emit: vi.fn(),
-                    destroy: vi.fn(),
+                            return input
+                        },
+                    ),
+                    write: vi.fn<() => unknown>(),
+                    end: vi.fn<() => unknown>(),
+                    emit: vi.fn<() => unknown>(),
+                    destroy: vi.fn<() => unknown>(),
                 }
 
                 // Act
@@ -456,20 +466,24 @@ describe(`${GrpcService.name}`, () => {
                 const input = {
                     metadata: new Metadata(),
                     request: undefined,
-                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                    addListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                            return input
+                        },
+                    ),
+                    prependListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    write: vi.fn(),
-                    end: vi.fn(),
-                    emit: vi.fn(),
-                    destroy: vi.fn(),
+                            return input
+                        },
+                    ),
+                    write: vi.fn<() => unknown>(),
+                    end: vi.fn<() => unknown>(),
+                    emit: vi.fn<() => unknown>(),
+                    destroy: vi.fn<() => unknown>(),
                 }
 
                 // Act
@@ -533,20 +547,24 @@ describe(`${GrpcService.name}`, () => {
                 const input = {
                     metadata: new Metadata(),
                     request: undefined,
-                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                    addListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                            return input
+                        },
+                    ),
+                    prependListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    write: vi.fn(),
-                    end: vi.fn(),
-                    emit: vi.fn(),
-                    destroy: vi.fn(),
+                            return input
+                        },
+                    ),
+                    write: vi.fn<() => unknown>(),
+                    end: vi.fn<() => unknown>(),
+                    emit: vi.fn<() => unknown>(),
+                    destroy: vi.fn<() => unknown>(),
                 }
 
                 // Act
@@ -600,20 +618,24 @@ describe(`${GrpcService.name}`, () => {
                 const input = {
                     metadata: new Metadata(),
                     request: undefined,
-                    addListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                    addListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    prependListener: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => {
-                        listeners.set(event, handler)
+                            return input
+                        },
+                    ),
+                    prependListener: vi.fn<(event: string, handler: (...args: unknown[]) => unknown) => unknown>(
+                        (event: string, handler: (...args: unknown[]) => unknown): unknown => {
+                            listeners.set(event, handler)
 
-                        return input
-                    }),
-                    write: vi.fn(),
-                    end: vi.fn(),
-                    emit: vi.fn(),
-                    destroy: vi.fn(),
+                            return input
+                        },
+                    ),
+                    write: vi.fn<() => unknown>(),
+                    end: vi.fn<() => unknown>(),
+                    emit: vi.fn<() => unknown>(),
+                    destroy: vi.fn<() => unknown>(),
                 }
 
                 await grpcService.onInit()

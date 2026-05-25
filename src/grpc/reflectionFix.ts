@@ -1,5 +1,5 @@
 import { AnyDefinition, PackageDefinition } from '@grpc/proto-loader'
-import descriptorExt from 'protobufjs/ext/descriptor'
+import descriptorExt from 'protobufjs/ext/descriptor/index.js'
 
 const { FileDescriptorProto } = descriptorExt
 
@@ -136,7 +136,7 @@ function buildPackageMap(packageName: string, packageMap: Map<string, string[]>)
 }
 
 function collectTypes(fd: FileDescriptor, typeMap: Map<string, string[]>): void {
-    const packagePrefix = '.' + fd.package + '.'
+    const packagePrefix = `.${fd.package}.`
 
     // Collect message types recursively
     if (fd.messageType) {
@@ -162,7 +162,7 @@ function collectMessageTypes(msg: MessageDescriptor, prefix: string, typeMap: Ma
 
     // Recursively collect nested types
     if (msg.nestedType) {
-        const nestedPrefix = prefix + msg.name + '.'
+        const nestedPrefix = `${prefix + msg.name}.`
         for (const nested of msg.nestedType) {
             collectMessageTypes(nested, nestedPrefix, typeMap)
         }
@@ -295,19 +295,19 @@ function fullyQualifyTypeName(typeName: string, packageMap: Map<string, string[]
         if (fullPkgs) {
             // Try each package and verify the type exists
             for (const fullPkg of fullPkgs) {
-                const candidate = '.' + fullPkg + '.' + messageName
+                const candidate = `.${fullPkg}.${messageName}`
                 if (isKnownType(candidate, typeMap)) {
                     return candidate
                 }
             }
 
             // If no verified match, use the first package (fallback behavior)
-            return '.' + fullPkgs[0] + '.' + messageName
+            return `.${fullPkgs[0]}.${messageName}`
         }
     }
 
     // If no match found, just add leading dot
-    return '.' + typeName
+    return `.${typeName}`
 }
 
 function isKnownType(fqn: string, typeMap: Map<string, string[]>): boolean {

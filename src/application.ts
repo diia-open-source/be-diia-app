@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { createRequire } from 'node:module'
 import { hostname } from 'node:os'
 import path from 'node:path'
 
@@ -15,16 +16,16 @@ import {
     listModules,
 } from 'awilix'
 import { LoadedModuleDescriptor, NameFormatter } from 'awilix/lib/load-modules'
-import { camelCase, upperFirst } from 'lodash'
-import { singular } from 'pluralize'
+import lodash from 'lodash'
+import pluralize from 'pluralize'
 import type { Class } from 'type-fest'
 
 import { Counter, MetricOptions, Observer } from '@diia-inhouse/diia-metrics'
-import { EnvService } from '@diia-inhouse/env'
+import { Env, EnvService } from '@diia-inhouse/env'
 import { AlsData, Logger, LoggerConstructor, LoggerOptions } from '@diia-inhouse/types'
 
-import { ApplicationHooks } from './applicationHooks'
-import { getBaseDeps } from './baseDeps'
+import { ApplicationHooks } from './applicationHooks.js'
+import { getBaseDeps } from './baseDeps.js'
 import {
     AppConfigType,
     AppDepsType,
@@ -36,9 +37,14 @@ import {
     OnStartHooksResult,
     ServiceContext,
     ServiceOperator,
-} from './interfaces/application'
-import { BaseDeps } from './interfaces/deps'
-import { NodeEnvLabelsMap, nodeEnvAllowedFields } from './metrics'
+} from './interfaces/application.js'
+import { BaseDeps } from './interfaces/deps.js'
+import { NodeEnvLabelsMap, nodeEnvAllowedFields } from './metrics.js'
+
+// oxlint-disable-next-line typescript/unbound-method
+const { camelCase, upperFirst } = lodash
+const { singular } = pluralize
+const requireFromHere = createRequire(import.meta.url)
 
 export class Application<TContext extends ServiceContext> extends ApplicationHooks<TContext> {
     container?: AwilixContainer<DepsType<TContext>>
@@ -79,9 +85,9 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
             envService: asClass(EnvService).singleton(),
 
             // prettier-ignore
-            // eslint-disable-next-line security/detect-non-literal-require
-            logger: asClass(require(loggerPkg).default as LoggerConstructor, { // nosemgrep: eslint.detect-non-literal-require
-                injector: () => ({ options: loggerOptions }),
+
+            logger: asClass(requireFromHere(loggerPkg).default as LoggerConstructor, { // nosemgrep: eslint.detect-non-literal-require
+                injector: () => ({ options: { redactDisabled: EnvService.getVar('NODE_ENV', 'string') === Env.Sandbox, ...loggerOptions } }),
             }).singleton(),
             asyncLocalStorage: asValue(new AsyncLocalStorage<AlsData>()),
         })
@@ -421,7 +427,6 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
             this.baseContainer?.resolve('logger').error('Failed to stop service. Shutdown completed', { err })
         }
 
-        // eslint-disable-next-line unicorn/no-process-exit
         setImmediate(() => process.exit(error ? 1 : 0))
     }
 }

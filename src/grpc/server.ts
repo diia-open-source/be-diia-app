@@ -15,15 +15,15 @@ import { glob } from 'glob'
 import { GrpcHealthCheckImplementation, HealthCheck, protoPath as healthProtoPath } from '@diia-inhouse/healthcheck'
 import type { Logger } from '@diia-inhouse/types'
 
-import { GrpcServerConfig, GrpcServiceImplementationProvider, GrpcServiceStatus } from '../interfaces/grpc'
-import { fixReflectionTypeNames } from './reflectionFix'
+import { GrpcServerConfig, GrpcServiceImplementationProvider, GrpcServiceStatus } from '../interfaces/grpc.js'
+import { fixReflectionTypeNames } from './reflectionFix.js'
 import {
     GrpcSchemaService,
     PROTO_LOADER_OPTIONS,
     SchemaReflectionInitializer,
     SchemaRegistry,
     schemaReflectionProtoPath,
-} from './schemaReflection'
+} from './schemaReflection/index.js'
 
 export class GrpcServer {
     health: GrpcHealthCheckImplementation | undefined
@@ -144,7 +144,15 @@ export class GrpcServer {
         this.status = 'NOT_SERVING'
 
         return await new Promise((resolve, reject) => {
-            this.server.tryShutdown((err) => (err ? reject(err) : resolve(this.server.forceShutdown())))
+            this.server.tryShutdown((err) => {
+                if (err) {
+                    reject(err)
+
+                    return
+                }
+
+                resolve(this.server.forceShutdown())
+            })
         })
     }
 

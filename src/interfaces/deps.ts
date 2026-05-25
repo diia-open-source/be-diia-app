@@ -21,11 +21,11 @@ import type { AlsData, Logger } from '@diia-inhouse/types'
 import { Utils } from '@diia-inhouse/utils'
 import type { AppValidator } from '@diia-inhouse/validators'
 
-import { ActionExecutor } from '../actionExecutor'
-import { GrpcService } from '../grpc'
-import { GrpcClientFactory } from '../grpc/grpcClient'
-import MoleculerService from '../moleculer/moleculerWrapper'
-import { BaseConfig } from './config'
+import { ActionExecutor } from '../actionExecutor.js'
+import { GrpcClientFactory } from '../grpc/grpcClient.js'
+import { GrpcService } from '../grpc/index.js'
+import MoleculerService from '../moleculer/moleculerWrapper.js'
+import { BaseConfig } from './config.js'
 
 export interface BaseDeps<TConfig extends BaseConfig = BaseConfig> {
     serviceName: string

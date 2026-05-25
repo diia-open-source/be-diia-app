@@ -74,7 +74,7 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
         },
 
         grpcClient: {
-            defaultDeadlineMs: EnvService.getVar('GRPC_CLIENT_DEFAULT_DEADLINE_MS', 'number', Number(DurationMs.Second)),
+            defaultDeadlineMs: EnvService.getVar('GRPC_CLIENT_DEFAULT_DEADLINE_MS', 'number', DurationMs.Second),
         },
 
         grpcServer: {

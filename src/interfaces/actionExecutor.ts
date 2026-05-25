@@ -3,7 +3,7 @@ import { SpanKind } from '@opentelemetry/api'
 import { RequestMechanism } from '@diia-inhouse/diia-metrics'
 import { ActionArguments } from '@diia-inhouse/types'
 
-import { AppAction } from './action'
+import { AppAction } from './action.js'
 
 export interface MetaTracing {
     traceparent?: string

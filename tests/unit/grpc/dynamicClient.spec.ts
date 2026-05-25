@@ -10,20 +10,20 @@ vi.mock('@grpc/grpc-js', async (importOriginal) => {
 
     return {
         ...original,
-        Client: vi.fn().mockImplementation(() => ({
-            close: vi.fn(),
-            makeUnaryRequest: vi.fn(),
+        Client: vi.fn<() => unknown>().mockImplementation(() => ({
+            close: vi.fn<() => unknown>(),
+            makeUnaryRequest: vi.fn<() => unknown>(),
         })),
         credentials: {
-            createInsecure: vi.fn().mockReturnValue({}),
+            createInsecure: vi.fn<() => unknown>().mockReturnValue({}),
         },
-        loadPackageDefinition: vi.fn().mockReturnValue({
+        loadPackageDefinition: vi.fn<() => unknown>().mockReturnValue({
             grpc: {
                 reflection: {
                     v1: {
-                        ServerReflection: vi.fn().mockImplementation(() => ({
-                            close: vi.fn(),
-                            ServerReflectionInfo: vi.fn(),
+                        ServerReflection: vi.fn<() => unknown>().mockImplementation(() => ({
+                            close: vi.fn<() => unknown>(),
+                            ServerReflectionInfo: vi.fn<() => unknown>(),
                         })),
                     },
                 },
@@ -33,7 +33,7 @@ vi.mock('@grpc/grpc-js', async (importOriginal) => {
 })
 
 vi.mock('@grpc/proto-loader', () => ({
-    loadSync: vi.fn().mockReturnValue({}),
+    loadSync: vi.fn<() => unknown>().mockReturnValue({}),
 }))
 
 describe('DynamicGrpcClient', () => {

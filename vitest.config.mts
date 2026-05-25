@@ -1,10 +1,11 @@
-import tsConfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vitest/config'
 
 const timeout = 60 * 1000
 
 export default defineConfig({
-    plugins: [tsConfigPaths()],
+    resolve: {
+        tsconfigPaths: true,
+    },
     test: {
         env: {
             NODE_ENV: 'test',

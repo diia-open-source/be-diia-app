@@ -2,10 +2,10 @@ import { PackageDefinition } from '@grpc/proto-loader'
 
 import type { Logger } from '@diia-inhouse/types'
 
-import { JsonSchemaGenerator } from './jsonSchemaGenerator'
-import { ProtoMetadataExtractor } from './protoMetadataExtractor'
-import { SchemaRegistry } from './schemaRegistry'
-import { GrpcMethodDefinition, HttpMapping, extractHttpMapping } from './types'
+import { JsonSchemaGenerator } from './jsonSchemaGenerator.js'
+import { ProtoMetadataExtractor } from './protoMetadataExtractor.js'
+import { SchemaRegistry } from './schemaRegistry.js'
+import { GrpcMethodDefinition, HttpMapping, extractHttpMapping } from './types.js'
 
 interface MethodFromPkgDef {
     path: string
@@ -16,6 +16,7 @@ interface MethodFromPkgDef {
     responseStream?: boolean
 }
 
+// oxlint-disable-next-line typescript/no-extraneous-class
 export class SchemaReflectionInitializer {
     static async initialize(
         protoPaths: string[],

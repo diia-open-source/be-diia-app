@@ -2,11 +2,11 @@ import path from 'node:path'
 
 import { Server, ServerUnaryCall, ServiceDefinition, sendUnaryData } from '@grpc/grpc-js'
 
-import { SchemaRegistry } from './schemaRegistry'
-import { JsonSchemaProperty, ServiceSchemaDto } from './types'
+import { SchemaRegistry } from './schemaRegistry.js'
+import { JsonSchemaProperty, ServiceSchemaDto } from './types.js'
 
 const resolveProtoPath = (): string => {
-    return path.resolve(__dirname, '../../../proto/schema-reflection.proto')
+    return path.resolve(import.meta.dirname, '../../../proto/schema-reflection.proto')
 }
 
 export const schemaReflectionProtoPath = resolveProtoPath()

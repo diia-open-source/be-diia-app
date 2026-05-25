@@ -13,7 +13,7 @@ import { ActionExecutor, AppApiService, ConfigFactoryFn, MoleculerService } from
 import { appAction, appApiService } from '../../mocks'
 import { configFactory } from '../config'
 
-describe(`${MoleculerService.name}`, () => {
+describe(MoleculerService.name, () => {
     const serviceName = 'Auth'
     const systemServiceName = 'auth-service'
     const logger = mock<Logger>()
@@ -22,10 +22,10 @@ describe(`${MoleculerService.name}`, () => {
     const asyncLocalStorage = mock<AsyncLocalStorage<AlsData>>()
     const metrics = mock<MetricsService>({
         totalRequestMetric: {
-            increment: vi.fn(),
+            increment: vi.fn<() => unknown>(),
         },
         totalTimerMetric: {
-            observeSeconds: vi.fn(),
+            observeSeconds: vi.fn<() => unknown>(),
         },
     })
     let cfg: Awaited<ReturnType<ConfigFactoryFn>>

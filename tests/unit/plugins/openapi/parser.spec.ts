@@ -18,6 +18,10 @@ import {
     tupleMatcher,
 } from '../../../mocks'
 
+interface SourceFileMock {
+    fileName: string
+}
+
 const typeChecker = {
     getIndexInfoOfType(): unknown {
         return
@@ -256,7 +260,7 @@ describe(`OpenApi typeParser`, () => {
                 symbol: {
                     declarations: [
                         {
-                            getSourceFile(): { fileName: string } {
+                            getSourceFile(): SourceFileMock {
                                 return { fileName: 'node_modules/pkg-external/file.js' }
                             },
                         },

@@ -1,6 +1,6 @@
 import protobuf from 'protobufjs'
 
-import { JsonSchema, JsonSchemaMap, JsonSchemaObject, JsonSchemaPrimitive, JsonSchemaProperty, JsonSchemaRef } from './types'
+import { JsonSchema, JsonSchemaMap, JsonSchemaObject, JsonSchemaPrimitive, JsonSchemaProperty, JsonSchemaRef } from './types.js'
 
 export class JsonSchemaGenerator {
     private static readonly protoToJsonType: Record<string, JsonSchemaPrimitive> = {
@@ -345,8 +345,8 @@ export class JsonSchemaGenerator {
     private generateMessageProtoSource(type: protobuf.Type, indent = ''): string {
         const lines: string[] = []
         const typeName = type.name
-        const innerIndent = indent + '  '
-        const oneofInnerIndent = innerIndent + '  '
+        const innerIndent = `${indent}  `
+        const oneofInnerIndent = `${innerIndent}  `
 
         // Add message-level comment if exists
         const messageComment = this.messageComments.get(typeName)
@@ -481,7 +481,7 @@ export class JsonSchemaGenerator {
     private generateEnumProtoSource(enumType: protobuf.Enum, indent = ''): string {
         const lines: string[] = []
         const typeName = enumType.name
-        const innerIndent = indent + '  '
+        const innerIndent = `${indent}  `
 
         // Add enum-level comment if exists
         const enumComment = this.messageComments.get(typeName)

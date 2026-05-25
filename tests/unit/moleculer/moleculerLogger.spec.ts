@@ -5,7 +5,7 @@ import Logger from '@diia-inhouse/diia-logger'
 
 import MoleculerLogger from '../../../src/moleculer/moleculerLogger'
 
-describe(`${MoleculerLogger.constructor.name}`, () => {
+describe(MoleculerLogger.constructor.name, () => {
     const logger = mock<Logger>()
 
     const moleculerLogger = new MoleculerLogger(logger)

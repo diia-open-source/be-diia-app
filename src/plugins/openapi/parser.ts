@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import ts from 'typescript'
 
 class TypeParser {
@@ -20,7 +19,6 @@ class TypeParser {
         const flags: ts.TypeFlags = type.flags
 
         if (this.isNull(flags)) {
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             return
         }
@@ -89,13 +87,12 @@ class TypeParser {
             .filter((prop) => prop.declarations)
             .map((prop) => {
                 const declaration = prop.declarations?.[0] as ts.ParameterDeclaration
-                const required: boolean = declaration?.questionToken ? false : true
+                const required = !declaration?.questionToken
 
                 if (required) {
                     return ts.factory.createStringLiteral(prop.getName())
                 }
             })
-            // eslint-disable-next-line unicorn/prefer-native-coercion-functions
             .filter((prop): prop is ts.StringLiteral => Boolean(prop))
 
         nestedPropertyAssignments.push(
@@ -110,7 +107,6 @@ class TypeParser {
     parsePrimitive(type: ts.Type): ts.ObjectLiteralExpression {
         const props: ts.PropertyAssignment[] = []
         if (type.flags & ts.TypeFlags.Literal) {
-            // eslint-disable-next-line no-prototype-builtins
             if (!type.hasOwnProperty('value') && type.hasOwnProperty('intrinsicName')) {
                 props.push(
                     ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
@@ -218,7 +214,7 @@ class TypeParser {
                 }
             }
 
-            return this.checker.typeToString(unionProperty) === 'undefined' ? false : true
+            return this.checker.typeToString(unionProperty) !== 'undefined'
         })
 
         if (types.length === 1) {
@@ -232,8 +228,8 @@ class TypeParser {
             return this.parseType(unionProperty)
         }
 
-        let literals: boolean = types.length > 0 ? true : false
-        let primitives: boolean = types.length > 0 ? true : false
+        let literals: boolean = types.length > 0
+        let primitives: boolean = types.length > 0
         for (const unionProperty of types) {
             if (!(unionProperty.flags & ts.TypeFlags.Literal)) {
                 literals = false
@@ -330,7 +326,7 @@ class TypeParser {
 
                             if (!unique.includes(id.escapedText.toString())) {
                                 unique.push(id.escapedText.toString())
-                                if (identifier.escapedText === 'properties') {
+                                if (identifier.escapedText.toString() === 'properties') {
                                     combinedProperties.push(prop)
                                 } else {
                                     additionalProperties.push(prop)
@@ -487,8 +483,8 @@ class TypeParser {
 
     private isRecordWithManyKeys(type: ts.Type): boolean {
         const isRecord: boolean =
-            type.aliasSymbol?.escapedName === 'Record' || type?.aliasTypeArguments?.length
-                ? type?.aliasTypeArguments?.[0]?.aliasSymbol?.escapedName === 'Record'
+            type.aliasSymbol?.escapedName?.toString() === 'Record' || type?.aliasTypeArguments?.length
+                ? type?.aliasTypeArguments?.[0]?.aliasSymbol?.escapedName?.toString() === 'Record'
                 : false
 
         if (!isRecord) {
@@ -560,8 +556,7 @@ class TypeParser {
             return ts.factory.createTrue()
         } else if (value === 'false') {
             return ts.factory.createFalse()
-            // eslint-disable-next-line regexp/no-unused-capturing-group, security/detect-unsafe-regex
-        } else if (/^[+-]?(\d+(\.\d*)?|\.\d+)$/.test(value)) {
+        } else if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) {
             return ts.factory.createNumericLiteral(Number(value))
         } else {
             return ts.factory.createStringLiteral(value)

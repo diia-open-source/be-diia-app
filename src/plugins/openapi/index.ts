@@ -1,11 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as dotenv from 'dotenv-flow'
-// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import * as ts from 'typescript'
 
 import { Env } from '@diia-inhouse/env'
 
-import ActionVisitor from './actionVisitor'
+import ActionVisitor from './actionVisitor.js'
 
 dotenv.config({ silent: true })
 
@@ -24,7 +23,6 @@ function before(program: ts.Program): ts.Transformer<any> {
     }
 }
 
-// eslint-disable-next-line unicorn/consistent-function-scoping
 const transformer = (): ts.Transformer<ts.SourceFile> => (sf) => sf
 
 export default function (program: ts.Program): ts.Transformer<any> {

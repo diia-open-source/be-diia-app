@@ -17,24 +17,25 @@ import { ApiError, HttpError } from '@diia-inhouse/errors'
 import { FeatureService } from '@diia-inhouse/features'
 import type { HealthCheck } from '@diia-inhouse/healthcheck'
 import {
+    ActHeaders,
+    ActionSession,
     ActionVersion,
+    GenericObject,
     GrpcStatusCode,
     HealthCheckResult,
     HttpStatusCode,
     Logger,
     MimeType,
+    OnDestroy,
     OnHealthCheck,
     OnInit,
     PlatformType,
     SessionType,
     grpcMetadataKeys,
 } from '@diia-inhouse/types'
-import { ActHeaders, GenericObject } from '@diia-inhouse/types/dist/types/common'
-import { OnDestroy } from '@diia-inhouse/types/dist/types/interfaces/onDestroy'
-import { ActionSession } from '@diia-inhouse/types/dist/types/session/session'
 import { utils } from '@diia-inhouse/utils'
 
-import { ActionExecutor } from '../actionExecutor'
+import { ActionExecutor } from '../actionExecutor.js'
 import {
     AppAction,
     BaseConfig,
@@ -45,11 +46,11 @@ import {
     GrpcServerStreamAction,
     GrpcServiceStatus,
     MetaTracing,
-} from '../interfaces'
-import { OnInitResults } from '../interfaces/onInitResults'
-import { GrpcServer } from './server'
-import { hasProperty } from './utils'
-import { registerWrappers } from './wrappers'
+} from '../interfaces/index.js'
+import { OnInitResults } from '../interfaces/onInitResults.js'
+import { GrpcServer } from './server.js'
+import { hasProperty } from './utils.js'
+import { registerWrappers } from './wrappers.js'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     private readonly grpcServer: GrpcServer | undefined
@@ -238,7 +239,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                 this.streamConnections.set(streamId, input)
                 if ('subscribeChannel' in actionInstance && mobileUid) {
                     const handler = async (data: GenericObject): Promise<void> => {
-                        this.logger.info('Publishing to channel ' + mobileUid, data)
+                        this.logger.info(`Publishing to channel ${mobileUid}`, data)
                         span.addEvent('channelPublish')
                         input.write(data)
                     }
@@ -256,7 +257,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                                 name: error.getName(),
                             })
 
-                            if (error.getCode() === ErrorCode.SubscriptionsExists) {
+                            if ((error.getCode() as ErrorCode) === ErrorCode.SubscriptionsExists) {
                                 const subscriptions = (error.getData().subscriptions as string[]) ?? []
 
                                 this.logger.info(`Closing existing connections by mobileUid ${mobileUid}`, { subscriptions })
@@ -276,7 +277,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
 
                             this.logger.error('Failed to subscribe to grpc stream channel', { error: error.getMessage(), mobileUid })
 
-                            this.logger.error('Failed to reopen connection for the mobileUid ' + mobileUid)
+                            this.logger.error(`Failed to reopen connection for the mobileUid ${mobileUid}`)
 
                             input.end()
                             span.setStatus({ code: SpanStatusCode.ERROR, message: error.getMessage() })
@@ -488,7 +489,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
 
         const actionInstanceByDefaultVersion = actions.get(ActionVersion.V1)
         if (!actionInstanceByDefaultVersion || actionInstanceByDefaultVersion.actionVersion) {
-            throw new HttpError('action not found for version ' + actionVersion, HttpStatusCode.NOT_IMPLEMENTED)
+            throw new HttpError(`action not found for version ${actionVersion}`, HttpStatusCode.NOT_IMPLEMENTED)
         }
 
         return actionInstanceByDefaultVersion
@@ -633,7 +634,9 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
 
         const rpcErrorCode: number = this.httpCodeToGrpcCode[apiError.getCode()] ?? this.httpCodeToGrpcCode[errorData.code ?? 0]
         const rpcError: ServerErrorResponse = {
-            ...apiError,
+            name: apiError.name,
+            message: apiError.message,
+            stack: apiError.stack,
             code: rpcErrorCode,
             details: apiError.getMessage(),
             metadata,

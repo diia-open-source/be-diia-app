@@ -1,7 +1,7 @@
 import { CallOptions, ClientMiddleware, ClientMiddlewareCall, TsProtoServiceDefinition } from 'nice-grpc'
-import { mock } from 'vitest-mock-extended'
+import { mock, mockDeep } from 'vitest-mock-extended'
 
-import DiiaLogger from '@diia-inhouse/diia-logger'
+import { DiiaLogger } from '@diia-inhouse/diia-logger'
 import { MetricsService } from '@diia-inhouse/diia-metrics'
 import TestKit from '@diia-inhouse/test'
 import { ActionVersion, grpcMetadataKeys } from '@diia-inhouse/types'
@@ -25,18 +25,19 @@ const options = {} as unknown as CallOptions
 
 const client = {}
 
+/* oxlint-disable typescript/await-thenable, jest/no-standalone-expect */
 vi.mock('nice-grpc', async (importOriginal) => {
     const originalModule = await importOriginal<typeof import('nice-grpc')>()
 
     return {
         __esModule: true,
         ...originalModule,
-        createChannel: vi.fn(),
+        createChannel: vi.fn<() => unknown>(),
         ChannelCredentials: {
-            createInsecure: vi.fn(),
+            createInsecure: vi.fn<() => unknown>(),
         },
         createClientFactory: (): unknown => ({
-            use: (loggingMiddleware: ClientMiddleware) => ({
+            use: (loggingMiddleware: ClientMiddleware): object => ({
                 use: (metadataMiddleware: ClientMiddleware): object => ({
                     use: (errorHandlerMiddleware: ClientMiddleware): object => ({
                         use: (deadlineMiddleware: ClientMiddleware): object => ({
@@ -83,11 +84,12 @@ vi.mock('nice-grpc', async (importOriginal) => {
         }),
     }
 })
+/* oxlint-enable typescript/await-thenable, jest/no-standalone-expect */
 
 describe('grpcClientFactory', () => {
     const serviceName = 'Auth'
     const logger = mock<DiiaLogger>()
-    const metrics = mock<MetricsService>()
+    const metrics = mockDeep<MetricsService>()
 
     const config = mock<BaseConfig>()
 

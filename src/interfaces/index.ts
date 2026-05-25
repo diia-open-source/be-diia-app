@@ -1,15 +1,15 @@
-export * from './action'
+export * from './action.js'
 
-export * from './config'
+export * from './config.js'
 
-export * from './apiService'
+export * from './apiService.js'
 
-export * from './tracing'
+export * from './tracing.js'
 
-export * from './grpc'
+export * from './grpc.js'
 
-export * from './actionExecutor'
+export * from './actionExecutor.js'
 
-export * from './errorCode'
+export * from './errorCode.js'
 
-export * from './featureFlag'
+export * from './featureFlag.js'

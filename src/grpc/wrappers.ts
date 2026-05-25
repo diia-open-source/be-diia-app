@@ -1,9 +1,8 @@
 import { createRequire } from 'node:module'
 
-import protobuf, { IWrapper, Message, Type } from 'protobufjs'
+import protobuf, { IWrapper, Message } from 'protobufjs'
 
-import { Logger } from '@diia-inhouse/types'
-import { GenericObject } from '@diia-inhouse/types/dist/types/common'
+import { GenericObject, Logger } from '@diia-inhouse/types'
 
 const wrappers = {
     '.google.protobuf.Timestamp': {
@@ -25,7 +24,7 @@ const wrappers = {
                 return this.fromObject(object)
             }
 
-            return (this as Type).create({
+            return this.create({
                 seconds: Math.floor(dt / 1000),
                 nanos: (dt % 1000) * 1000000,
             })
@@ -51,8 +50,7 @@ export default wrappers
 export function registerWrappers(logger: Logger): void {
     Object.assign(protobuf.wrappers, wrappers)
 
-    // __filename in CJS; replace with import.meta.url when migrating to ESM
-    const localRequire = createRequire(__filename)
+    const localRequire = createRequire(import.meta.url)
 
     let protoLoaderPath: string
     try {

@@ -6,7 +6,7 @@ import { EnvService } from '@diia-inhouse/env'
 import { OnBeforeApplicationShutdown, OnDestroy, OnRegistrationsFinished } from '@diia-inhouse/types'
 import { guards } from '@diia-inhouse/utils'
 
-import { GrpcService } from './grpc'
+import { GrpcService } from './grpc/index.js'
 import {
     AppDepsTypeWithBase,
     DepsType,
@@ -15,9 +15,9 @@ import {
     OnInitInstance,
     OnStartHooksResult,
     ServiceContext,
-} from './interfaces/application'
-import { OnInitResults } from './interfaces/onInitResults'
-import MoleculerService from './moleculer/moleculerWrapper'
+} from './interfaces/application.js'
+import { OnInitResults } from './interfaces/onInitResults.js'
+import MoleculerService from './moleculer/moleculerWrapper.js'
 
 export abstract class ApplicationHooks<TContext extends ServiceContext> {
     private syncCommunicationClasses = [MoleculerService, GrpcService]
@@ -81,7 +81,7 @@ export abstract class ApplicationHooks<TContext extends ServiceContext> {
         return result as OnStartHooksResult
     }
 
-    protected async runOnStopHooks(): Promise<void | never> {
+    protected async runOnStopHooks(): Promise<void> {
         if (!this.container) {
             throw new Error('Container should be initialized before stop hooks')
         }
@@ -148,6 +148,7 @@ export abstract class ApplicationHooks<TContext extends ServiceContext> {
     private async allSettledHookTasks(tasks: Promise<void>[]): Promise<Error[]> {
         const results = await Promise.allSettled(tasks)
 
+        // oxlint-disable-next-line typescript/unbound-method
         return results.filter(guards.isSettledError).map((err) => new Error(err.reason))
     }
 

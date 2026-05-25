@@ -1,8 +1,7 @@
-// eslint-disable-next-line import/no-extraneous-dependencies, n/no-unpublished-import
 import ts from 'typescript'
 
-import { ACTION_RESPONSE } from '../pluginConstants'
-import parser from './parser'
+import { ACTION_RESPONSE } from '../pluginConstants.js'
+import parser from './parser.js'
 
 const ActionVisitor = {
     visit(sourceFile: ts.SourceFile, ctx: ts.TransformationContext, program: ts.Program): ReturnType<typeof ts.visitNode> {
@@ -10,7 +9,7 @@ const ActionVisitor = {
 
         const visitClassNode = (node: ts.Node): ts.Node => {
             if (ts.isClassDeclaration(node)) {
-                const classMethods = node.members.filter((member) => ts.isMethodDeclaration(member)) as ts.MethodDeclaration[]
+                const classMethods = node.members.filter((member) => ts.isMethodDeclaration(member))
 
                 const handlerMethod = classMethods.find((classMethod) => classMethod.name.getText() === 'handler')
 

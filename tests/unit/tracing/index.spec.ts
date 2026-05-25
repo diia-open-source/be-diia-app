@@ -8,19 +8,17 @@ import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 
 import { getIgnoreIncomingRequestHook, initTracing } from '../../../src'
 
+interface ResourceMock {
+    merge: () => void
+}
+
 vi.mock('@opentelemetry/resources', async (importOriginal) => {
     const original = await importOriginal<typeof import('@opentelemetry/resources')>()
 
     return {
         ...original,
-        // eslint-disable-next-line unicorn/no-static-only-class
-        Resource: class ResourceMock {
-            static default(): { merge: () => void } {
-                return {
-                    merge: (): void => {},
-                }
-            }
-        },
+        defaultResource: (): ResourceMock => ({ merge: (): void => {} }),
+        resourceFromAttributes: (): Record<string, never> => ({}),
     }
 })
 
@@ -31,7 +29,6 @@ vi.mock('@opentelemetry/instrumentation')
 vi.mock('@opentelemetry/sdk-trace-base')
 
 const defaultConfig = {
-    // eslint-disable-next-line unicorn/no-unused-properties
     instrumentations: {
         '@opentelemetry/instrumentation-fs': { enabled: false },
         '@opentelemetry/instrumentation-http': { ignoreIncomingRequestHook: getIgnoreIncomingRequestHook() },

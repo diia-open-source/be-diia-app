@@ -7,7 +7,7 @@ import type { HealthCheckConfig } from '@diia-inhouse/healthcheck'
 import type { RedisConfig } from '@diia-inhouse/redis'
 import type { GenericObject, HttpMethod } from '@diia-inhouse/types'
 
-import { GrpcClientConfig, GrpcServerConfig } from './grpc'
+import { GrpcClientConfig, GrpcServerConfig } from './grpc.js'
 
 export type CorsConfig = {
     // Configures the Access-Control-Allow-Origin CORS header.

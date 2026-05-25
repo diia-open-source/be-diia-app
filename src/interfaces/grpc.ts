@@ -1,8 +1,7 @@
 import { ServiceDefinition, UntypedServiceImplementation } from '@grpc/grpc-js'
 import { CallOptions as DefaultGrpcCallOptions } from 'nice-grpc'
 
-import { ActionVersion } from '@diia-inhouse/types'
-import { ActionSession } from '@diia-inhouse/types/dist/types/session/session'
+import { ActionSession, ActionVersion } from '@diia-inhouse/types'
 
 export interface GrpcClientConfig {
     defaultDeadlineMs?: number

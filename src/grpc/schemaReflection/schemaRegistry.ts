@@ -1,4 +1,4 @@
-import { RegisteredMethod } from './types'
+import { RegisteredMethod } from './types.js'
 
 export class SchemaRegistry {
     private readonly methods = new Map<string, RegisteredMethod>()

@@ -26,6 +26,19 @@ interface SchemaReflectionClient {
     getSchemas: (request: object, callback: (error: Error | null, response: ServiceSchemaResponse) => void) => void
 }
 
+const fetchSchemas = (client: SchemaReflectionClient): Promise<ServiceSchemaResponse> =>
+    new Promise<ServiceSchemaResponse>((resolve, reject) => {
+        client.getSchemas({}, (error, result) => {
+            if (error) {
+                reject(error)
+
+                return
+            }
+
+            resolve(result)
+        })
+    })
+
 describe('SchemaReflection gRPC Endpoint', () => {
     let app: Awaited<ReturnType<typeof getApp>>
     let serverPort: number
@@ -36,7 +49,7 @@ describe('SchemaReflection gRPC Endpoint', () => {
         await app.container.resolve('grpcService').onHealthCheck()
 
         // Get the actual server port from container
-        serverPort = app.container.resolve('grpcServerPort') as number
+        serverPort = app.container.resolve('grpcServerPort')
 
         // Load the SchemaReflection proto and create a client
         const protoPath = path.resolve(__dirname, '../../../proto/schema-reflection.proto')
@@ -67,58 +80,26 @@ describe('SchemaReflection gRPC Endpoint', () => {
     })
 
     it('returns service schema response with service name and version', async () => {
-        const response = await new Promise<ServiceSchemaResponse>((resolve, reject) => {
-            schemaClient.getSchemas({}, (error, result) => {
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve(result)
-                }
-            })
-        })
+        const response = await fetchSchemas(schemaClient)
 
         expect(response.serviceName).toBeDefined()
         expect(response.version).toBeDefined()
     })
 
     it('returns actions array with registered gRPC methods', async () => {
-        const response = await new Promise<ServiceSchemaResponse>((resolve, reject) => {
-            schemaClient.getSchemas({}, (error, result) => {
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve(result)
-                }
-            })
-        })
+        const response = await fetchSchemas(schemaClient)
 
         expect(Array.isArray(response.actions)).toBe(true)
     })
 
     it('returns definitions_json as valid JSON string', async () => {
-        const response = await new Promise<ServiceSchemaResponse>((resolve, reject) => {
-            schemaClient.getSchemas({}, (error, result) => {
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve(result)
-                }
-            })
-        })
+        const response = await fetchSchemas(schemaClient)
 
         expect(() => JSON.parse(response.definitionsJson)).not.toThrow()
     })
 
     it('includes request and response schemas as valid JSON for each action', async () => {
-        const response = await new Promise<ServiceSchemaResponse>((resolve, reject) => {
-            schemaClient.getSchemas({}, (error, result) => {
-                if (error) {
-                    reject(error)
-                } else {
-                    resolve(result)
-                }
-            })
-        })
+        const response = await fetchSchemas(schemaClient)
 
         for (const action of response.actions) {
             expect(action.grpcMethod).toBeDefined()

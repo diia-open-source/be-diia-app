@@ -1,18 +1,24 @@
+import { createRequire } from 'node:module'
+
 import { DiagConsoleLogger, DiagLogLevel, Span, diag } from '@opentelemetry/api'
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
 import type { ConsumeEndInfo, ConsumeInfo, PublishConfirmedInfo, PublishInfo } from '@opentelemetry/instrumentation-amqplib'
 import type { IgnoreIncomingRequestFunction } from '@opentelemetry/instrumentation-http'
-import { Resource } from '@opentelemetry/resources'
+import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
-import { merge } from 'lodash'
+import lodash from 'lodash'
 
 import { EnvService } from '@diia-inhouse/env'
 
-import { ATTR_K8S_POD_NAME, OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing'
+import { ATTR_K8S_POD_NAME, OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing.js'
+
+// oxlint-disable-next-line typescript/unbound-method
+const { merge } = lodash
+const requireFromHere = createRequire(import.meta.url)
 
 let activitiesModule:
     | {
@@ -26,7 +32,7 @@ let activitiesModule:
     | undefined
 
 try {
-    activitiesModule = require('@diia-inhouse/workflow/activity')
+    activitiesModule = requireFromHere('@diia-inhouse/workflow/activity')
 } catch {
     // Module is not available, activitiesModule remains undefined
 }
@@ -141,8 +147,8 @@ export function initTracing(override?: OpentelemetryTracingConfig): NodeTracerPr
         diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.VERBOSE)
     }
 
-    const resource = Resource.default().merge(
-        new Resource({
+    const resource = defaultResource().merge(
+        resourceFromAttributes({
             [ATTR_SERVICE_NAME]: systemServiceName,
             [ATTR_K8S_POD_NAME]: podName,
         }),

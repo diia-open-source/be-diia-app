@@ -9,6 +9,9 @@ export function bindAsyncGenerator<T = unknown, TReturn = any, TNext = unknown>(
         next: context.bind(ctx, generator.next.bind(generator)),
         return: context.bind(ctx, generator.return.bind(generator)),
         throw: context.bind(ctx, generator.throw.bind(generator)),
+        [Symbol.asyncDispose]: context.bind(ctx, async (): Promise<void> => {
+            await generator.return(undefined as void | TReturn)
+        }),
 
         [Symbol.asyncIterator](): AsyncGenerator<T, void | TReturn, TNext> {
             return bindAsyncGenerator(ctx, generator)

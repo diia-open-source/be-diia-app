@@ -3,6 +3,19 @@ import ts from 'typescript'
 import { ACTION_RESPONSE } from '../../../../src'
 import ActionVisitor from '../../../../src/plugins/openapi/actionVisitor'
 
+interface ReturnTypeSymbol {
+    symbol: { getName: () => string }
+}
+
+interface ReturnTypeWithTypeArgs extends ReturnTypeSymbol {
+    typeArguments: unknown[]
+}
+
+interface TypeCheckerMock {
+    getSignatureFromDeclaration: () => boolean
+    getReturnTypeOfSignature: () => ReturnTypeSymbol
+}
+
 vi.mock('../../../../src/plugins/openapi/parser')
 vi.mock('typescript', async (importOriginal) => {
     const original = await importOriginal<typeof import('typescript')>()
@@ -10,9 +23,9 @@ vi.mock('typescript', async (importOriginal) => {
     return {
         ...original,
         default: {
-            visitEachChild: vi.fn(),
-            getModifiers: vi.fn(),
-            isClassDeclaration: vi.fn().mockReturnValueOnce(true),
+            visitEachChild: vi.fn<() => unknown>(),
+            getModifiers: vi.fn<() => unknown>(),
+            isClassDeclaration: vi.fn<() => unknown>().mockReturnValueOnce(true),
             // isClassDeclaration: (): boolean => true,
             isMethodDeclaration: (): boolean => true,
             visitNode: (node: unknown, visitClassNode: (node: unknown) => void): void => {
@@ -23,15 +36,12 @@ vi.mock('typescript', async (importOriginal) => {
 })
 
 const programMock = {
-    getTypeChecker(): {
-        getSignatureFromDeclaration: () => boolean
-        getReturnTypeOfSignature: () => { symbol: { getName: () => string } }
-    } {
+    getTypeChecker(): TypeCheckerMock {
         return {
             getSignatureFromDeclaration(): boolean {
                 return true
             },
-            getReturnTypeOfSignature(): { symbol: { getName: () => string } } {
+            getReturnTypeOfSignature(): ReturnTypeSymbol {
                 return {
                     symbol: {
                         getName(): string {
@@ -45,9 +55,9 @@ const programMock = {
 }
 const transformationContextMock = {
     factory: {
-        createIdentifier: vi.fn(),
-        createPropertyDeclaration: vi.fn(),
-        updateClassDeclaration: vi.fn(),
+        createIdentifier: vi.fn<() => unknown>(),
+        createPropertyDeclaration: vi.fn<() => unknown>(),
+        updateClassDeclaration: vi.fn<() => unknown>(),
     },
 }
 
@@ -106,7 +116,7 @@ describe(`OpenApi ActionVisitor`, () => {
                 getSignatureFromDeclaration(): boolean {
                     return false
                 },
-                getReturnTypeOfSignature(): { symbol: { getName: () => string } } {
+                getReturnTypeOfSignature(): ReturnTypeSymbol {
                     return {
                         symbol: {
                             getName(): string {
@@ -131,7 +141,7 @@ describe(`OpenApi ActionVisitor`, () => {
                 getSignatureFromDeclaration(): boolean {
                     return true
                 },
-                getReturnTypeOfSignature(): { symbol: { getName: () => string }; typeArguments: unknown[] } {
+                getReturnTypeOfSignature(): ReturnTypeWithTypeArgs {
                     return {
                         symbol: {
                             getName(): string {

@@ -6,7 +6,8 @@
         "moduleResolution": "Bundler",
         "noEmit": true,
         "skipLibCheck": true,
-        "strict": true
+        "strict": true,
+        "rootDir": "../"
     },
     "include": ["./**/*", "../vitest.config.mts"]
 }

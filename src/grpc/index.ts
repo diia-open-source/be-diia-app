@@ -2,19 +2,19 @@ import { Metadata } from 'nice-grpc'
 
 import { grpcMetadataKeys } from '@diia-inhouse/types'
 
-import { CallOptions, GrpcClientMetadata } from '../interfaces'
+import { CallOptions, GrpcClientMetadata } from '../interfaces/index.js'
 
 export { Metadata as GrpcMetadata } from 'nice-grpc'
 
-export * from './grpcService'
+export * from './grpcService.js'
 
-export * from './grpcClient'
+export * from './grpcClient.js'
 
-export * from './schemaReflection'
+export * from './schemaReflection/index.js'
 
-export * from './dynamicClient'
+export * from './dynamicClient.js'
 
-export * from './grpcExecutor'
+export * from './grpcExecutor.js'
 
 export function clientCallOptions(grpcMetadata: GrpcClientMetadata): CallOptions {
     const metadata = new Metadata()

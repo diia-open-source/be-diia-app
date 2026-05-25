@@ -1,9 +1,10 @@
 import { GrpcObject, ServiceClientConstructor, ServiceDefinition } from '@grpc/grpc-js'
-import { AppAction } from 'src'
 
 import { ApiError } from '@diia-inhouse/errors'
 import { ActionVersion, AppUserActionHeaders, HttpStatusCode, ServiceActionArguments, SessionType } from '@diia-inhouse/types'
 import { ValidationSchema } from '@diia-inhouse/validators'
+
+import { AppAction } from '../../src'
 
 interface GrpcActionArguments extends ServiceActionArguments<AppUserActionHeaders> {
     params: { param: string }

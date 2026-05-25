@@ -5,11 +5,11 @@ import type { Queue as QueueType } from '@diia-inhouse/diia-queue'
 import { Utils } from '@diia-inhouse/utils'
 import { AppValidator } from '@diia-inhouse/validators'
 
-import { ActionExecutor } from './actionExecutor'
-import { GrpcClientFactory, GrpcService } from './grpc'
-import { BaseConfig } from './interfaces'
-import { BaseDeps } from './interfaces/deps'
-import MoleculerService from './moleculer/moleculerWrapper'
+import { ActionExecutor } from './actionExecutor.js'
+import { GrpcClientFactory, GrpcService } from './grpc/index.js'
+import { BaseDeps } from './interfaces/deps.js'
+import { BaseConfig } from './interfaces/index.js'
+import MoleculerService from './moleculer/moleculerWrapper.js'
 
 export async function getBaseDeps<TConfig extends BaseConfig = BaseConfig>(
     config: TConfig,

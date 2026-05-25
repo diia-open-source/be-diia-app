@@ -5,7 +5,12 @@ import protobuf from 'protobufjs'
 
 import type { Logger } from '@diia-inhouse/types'
 
-import { HTTP_METHODS, MethodMetadata, ProtoMetadata } from './types'
+import { HTTP_METHODS, MethodMetadata, ProtoMetadata } from './types.js'
+
+interface DeprecationInfo {
+    deprecated: boolean
+    description: string | undefined
+}
 
 export class ProtoMetadataExtractor {
     constructor(private readonly logger?: Logger) {}
@@ -181,7 +186,7 @@ export class ProtoMetadataExtractor {
         return comments
     }
 
-    private extractDeprecation(method: protobuf.Method): { deprecated: boolean; description: string | undefined } {
+    private extractDeprecation(method: protobuf.Method): DeprecationInfo {
         const rawComment = method.comment || undefined
         const isDeprecatedViaOption = (method.options as Record<string, unknown> | undefined)?.deprecated === true
         const deprecatedPattern = /^[\t ]*@deprecated\b/im
