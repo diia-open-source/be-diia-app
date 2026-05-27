@@ -6,7 +6,7 @@ import { registerInstrumentations } from '@opentelemetry/instrumentation'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 
-import { getIgnoreIncomingRequestHook, initTracing } from '../../../src'
+import { getIgnoreIncomingRequestHook, initTracing } from '../../../src/tracing/index.js'
 
 interface ResourceMock {
     merge: () => void

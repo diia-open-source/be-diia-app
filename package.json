@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "32.4.0",
+    "version": "33.0.0",
     "type": "module",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
@@ -9,6 +9,14 @@
         ".": {
             "types": "./dist/types/index.d.ts",
             "default": "./dist/index.js"
+        },
+        "./tracing": {
+            "types": "./dist/types/tracing/index.d.ts",
+            "default": "./dist/tracing/index.js"
+        },
+        "./tracing/register": {
+            "types": "./dist/types/tracing/register.d.ts",
+            "default": "./dist/tracing/register.js"
         },
         "./dist/plugins/openapi": {
             "types": "./dist/types/plugins/openapi/index.d.ts",
@@ -49,14 +57,14 @@
         "@grpc/proto-loader": "0.8.1",
         "@grpc/reflection": "1.0.4",
         "@opentelemetry/api": "1.9.1",
-        "@opentelemetry/auto-instrumentations-node": "0.75.0",
+        "@opentelemetry/auto-instrumentations-node": "0.76.0",
         "@opentelemetry/core": "2.7.1",
-        "@opentelemetry/exporter-trace-otlp-grpc": "0.217.0",
-        "@opentelemetry/instrumentation": "0.217.0",
+        "@opentelemetry/exporter-trace-otlp-grpc": "0.218.0",
+        "@opentelemetry/instrumentation": "0.218.0",
         "@opentelemetry/resources": "2.7.1",
         "@opentelemetry/sdk-trace-base": "2.7.1",
         "@opentelemetry/sdk-trace-node": "2.7.1",
-        "@opentelemetry/semantic-conventions": "1.40.0",
+        "@opentelemetry/semantic-conventions": "1.41.1",
         "@types/dotenv-flow": "3.3.3",
         "awilix": "12.0.5",
         "cookie-parser": "1.4.7",
@@ -129,9 +137,9 @@
         "@diia-inhouse/types": "13.2.0",
         "@diia-inhouse/utils": "6.0.11",
         "@diia-inhouse/validators": "2.2.2",
-        "@opentelemetry/instrumentation-amqplib": "0.64.0",
-        "@opentelemetry/instrumentation-http": "0.217.0",
-        "@opentelemetry/otlp-grpc-exporter-base": "0.217.0",
+        "@opentelemetry/instrumentation-amqplib": "0.65.0",
+        "@opentelemetry/instrumentation-http": "0.218.0",
+        "@opentelemetry/otlp-grpc-exporter-base": "0.218.0",
         "@types/cookie-parser": "1.4.10",
         "@types/lodash": "4.17.24",
         "@types/node": "25.6.2",

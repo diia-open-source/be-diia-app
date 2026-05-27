@@ -27,8 +27,6 @@ export * from './grpc/index.js'
 
 export * from './plugins/pluginConstants.js'
 
-export * from './tracing/index.js'
-
 export * from './actionExecutor.js'
 
 export { default as MoleculerService } from './moleculer/moleculerWrapper.js'
