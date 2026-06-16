@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "33.0.5",
+    "version": "33.0.6",
     "type": "module",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
@@ -78,7 +78,7 @@
         "nice-grpc-client-middleware-deadline": "2.0.19",
         "p-timeout": "4.1.0",
         "pluralize": "8.0.0",
-        "protobufjs": "7.5.8",
+        "protobufjs": "7.6.3",
         "ts-patch": "3.3.0"
     },
     "peerDependencies": {
