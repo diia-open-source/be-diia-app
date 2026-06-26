@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "33.0.9",
+    "version": "33.0.10",
     "type": "module",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
@@ -134,7 +134,7 @@
         "@diia-inhouse/oxc-config": "1.11.0",
         "@diia-inhouse/redis": "3.1.16",
         "@diia-inhouse/test": "8.2.13",
-        "@diia-inhouse/types": "13.3.0",
+        "@diia-inhouse/types": "14.0.0",
         "@diia-inhouse/utils": "6.0.31",
         "@diia-inhouse/validators": "2.2.26",
         "@opentelemetry/instrumentation-amqplib": "0.65.0",
