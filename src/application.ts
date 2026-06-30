@@ -335,7 +335,11 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
             }
         }
 
-        return await this.runOnStartHooks()
+        try {
+            return await this.runOnStartHooks()
+        } catch (err) {
+            return await this.onShutDown('Failed to start service', err)
+        }
     }
 
     private async stop(): Promise<void> {
@@ -414,7 +418,7 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
         })
     }
 
-    private async onShutDown(msg: string, error?: unknown): Promise<void> {
+    private async onShutDown(msg: string, error?: unknown): Promise<never> {
         if (error) {
             this.baseContainer?.resolve('logger').error(msg, { err: error })
         } else {
@@ -428,6 +432,8 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
         }
 
         setImmediate(() => process.exit(error ? 1 : 0))
+
+        return await new Promise<never>(() => undefined)
     }
 }
 

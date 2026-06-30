@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "33.0.10",
+    "version": "33.0.11",
     "type": "module",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
