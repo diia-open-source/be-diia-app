@@ -59,6 +59,57 @@ describe(MoleculerService.name, () => {
             expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
         })
 
+        it('should register no actions but still start the broker when disableMoleculerActions is true', async () => {
+            const moleculerService = new MoleculerService(
+                serviceName,
+                systemServiceName,
+                actionExecutor,
+                [appAction],
+                { ...cfg, disableMoleculerActions: true },
+                asyncLocalStorage,
+                logger,
+                envService,
+                metrics,
+                {},
+                appApiService,
+            )
+
+            const createService = vi.spyOn(moleculerService.serviceBroker, 'createService').mockReturnValue({} as Service)
+
+            vi.spyOn(moleculerService.serviceBroker, 'start').mockResolvedValue()
+
+            await moleculerService.onInit()
+
+            expect(createService).toHaveBeenCalledWith(expect.objectContaining({ name: serviceName, actions: {} }))
+            expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
+        })
+
+        it('should register actions when disableMoleculerActions is not set', async () => {
+            const moleculerService = new MoleculerService(
+                serviceName,
+                systemServiceName,
+                actionExecutor,
+                [appAction],
+                cfg,
+                asyncLocalStorage,
+                logger,
+                envService,
+                metrics,
+                {},
+                appApiService,
+            )
+
+            const createService = vi.spyOn(moleculerService.serviceBroker, 'createService').mockReturnValue({} as Service)
+
+            vi.spyOn(moleculerService.serviceBroker, 'start').mockResolvedValue()
+
+            await moleculerService.onInit()
+
+            const schema = createService.mock.calls[0][0] as { actions: Record<string, unknown> }
+
+            expect(Object.keys(schema.actions).length).toBeGreaterThan(0)
+        })
+
         it('should create service broker with default registry options', async () => {
             const { balancing, ...configWithoutBalancing } = await configFactory(envService, serviceName)
             const moleculerService = new MoleculerService(

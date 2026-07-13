@@ -1,10 +1,9 @@
 import { IdentifierConfig } from '@diia-inhouse/crypto'
 import { EnvService } from '@diia-inhouse/env'
-import { HealthCheckConfig } from '@diia-inhouse/healthcheck'
 import { RedisConfig } from '@diia-inhouse/redis'
 import { DurationMs } from '@diia-inhouse/types'
 
-import { BalancingStrategy, BaseConfig, TransporterConfig } from '../../src/interfaces'
+import { BalancingStrategy, BaseConfig } from '../../src/interfaces'
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 export const configFactory = async (_: EnvService, serviceName: string) =>
@@ -15,7 +14,7 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
         transporter: {
             type: EnvService.getVar('TRANSPORT_TYPE', 'string'),
             options: EnvService.getVar('TRANSPORT_OPTIONS', 'object', {}),
-        } as TransporterConfig,
+        },
 
         balancing: {
             strategy: process.env.BALANCING_STRATEGY_NAME,
@@ -25,7 +24,7 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
         healthCheck: {
             isEnabled: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
             port: EnvService.getVar('HEALTH_CHECK_IS_PORT', 'number', 3000),
-        } as HealthCheckConfig,
+        },
 
         store: {
             readWrite: EnvService.getVar('STORE_READ_WRITE_OPTIONS', 'object'),

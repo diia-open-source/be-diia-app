@@ -87,7 +87,7 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
             // prettier-ignore
 
             logger: asClass(requireFromHere(loggerPkg).default as LoggerConstructor, { // nosemgrep: eslint.detect-non-literal-require
-                injector: () => ({ options: { redactDisabled: EnvService.getVar('NODE_ENV', 'string') === Env.Sandbox, ...loggerOptions } }),
+                injector: () => ({ options: { redactDisabled: (EnvService.getVar('NODE_ENV', 'string') as Env) === Env.Sandbox, ...loggerOptions } }),
             }).singleton(),
             asyncLocalStorage: asValue(new AsyncLocalStorage<AlsData>()),
         })

@@ -66,6 +66,7 @@ export interface BaseConfig {
     tracing?: TracingConfig
     metrics?: MetricsConfig
     isMoleculerEnabled?: boolean
+    disableMoleculerActions?: boolean
     store?: RedisConfig
     /** @deprecated use store instead */
     redis?: RedisConfig

@@ -188,7 +188,7 @@ export class ProtoMetadataExtractor {
 
     private extractDeprecation(method: protobuf.Method): DeprecationInfo {
         const rawComment = method.comment || undefined
-        const isDeprecatedViaOption = (method.options as Record<string, unknown> | undefined)?.deprecated === true
+        const isDeprecatedViaOption = method.options?.deprecated === true
         const deprecatedPattern = /^[\t ]*@deprecated\b/im
         const isDeprecatedViaComment = rawComment ? deprecatedPattern.test(rawComment) : false
         const deprecated = isDeprecatedViaOption || isDeprecatedViaComment

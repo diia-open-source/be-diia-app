@@ -149,7 +149,9 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                     throw new Error('Original name in method object is undefined')
                 }
 
-                switch (this.getMethodType(method)) {
+                const methodType = this.getMethodType(method)
+
+                switch (methodType) {
                     case GrpcMethodType.UNARY: {
                         serviceImplementation[grpcMethod] = this.provideGrpcMethodImplementation(
                             this.provideAppActions(originalName, method),
@@ -170,6 +172,11 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                     }
                     case GrpcMethodType.CLIENT_STREAM: {
                         throw new Error('Client streaming not supported')
+                    }
+                    default: {
+                        const unhandledMethodType: never = methodType
+
+                        throw new TypeError(`Unhandled gRPC method type: ${String(unhandledMethodType)}`)
                     }
                 }
             }

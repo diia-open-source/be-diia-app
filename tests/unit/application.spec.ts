@@ -25,7 +25,7 @@ describe(Application.name, () => {
             app['baseContainer'].register({ logger: asValue(logger) })
             app.container = createContainer<DepsType<ServiceContext>>()
 
-            let resolveExit: () => void = () => undefined
+            let resolveExit!: () => void
             const exited = new Promise<void>((resolve) => {
                 resolveExit = resolve
             })

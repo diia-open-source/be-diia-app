@@ -223,7 +223,7 @@ export class DynamicGrpcClient {
                 result[field.name] =
                     field.repeated && Array.isArray(value)
                         ? value.map((v) => this.convertEnumValues(resolvedType, v as object))
-                        : this.convertEnumValues(resolvedType, value as object)
+                        : this.convertEnumValues(resolvedType, value)
             }
         }
 

@@ -20,7 +20,7 @@ describe(MoleculerLogger.constructor.name, () => {
         })
 
         it('should successfully get log handler and invoke log method when only message', () => {
-            logHandler('trace', ['trace message'] as unknown as [string, unknown])
+            logHandler('trace', ['trace message'])
 
             expect(logger.trace).toHaveBeenCalledWith('trace message')
         })

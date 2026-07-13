@@ -89,7 +89,7 @@ export function fixReflectionTypeNames(pkgDefs: PackageDefinition): PackageDefin
         const modified = applyFixes(fd, packageMap, typeMap)
 
         if (modified) {
-            const encoded = FileDescriptorProto.encode(fd as never).finish()
+            const encoded = FileDescriptorProto.encode(fd).finish()
 
             fixedBuffers.set(buf, Buffer.from(encoded))
         }

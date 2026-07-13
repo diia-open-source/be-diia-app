@@ -70,9 +70,14 @@ export default class MoleculerService implements OnInit, OnDestroy {
     }
 
     async onInit(): Promise<void> {
-        const serviceActions = this.createActions(this.actionList)
+        const disableActions = this.config.disableMoleculerActions === true
+        if (disableActions) {
+            this.logger.info('Moleculer actions are disabled for this node; registering no actions')
+        }
+
+        const serviceActions = disableActions ? {} : this.createActions(this.actionList)
         const serviceSchema: ServiceSchema = { name: this.serviceName, actions: serviceActions, events: this.moleculerEvents ?? {} }
-        const options = this.addApiService(serviceSchema)
+        const options = disableActions ? serviceSchema : this.addApiService(serviceSchema)
 
         this.service = this.serviceBroker.createService(options)
 

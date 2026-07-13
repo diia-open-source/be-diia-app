@@ -20,7 +20,7 @@ const createFileDescriptor = (options: {
     }[]
     extension?: { name: string; extendee?: string; typeName?: string }[]
 }): Buffer => {
-    const encoded = FileDescriptorProto.encode(options as never).finish()
+    const encoded = FileDescriptorProto.encode(options).finish()
 
     return Buffer.from(encoded)
 }
@@ -62,7 +62,7 @@ describe('fixReflectionTypeNames', () => {
 
         it('package definition has no fileDescriptorProtos', () => {
             const pkgDef: PackageDefinition = {
-                'test.Service': {} as never,
+                'test.Service': {},
             }
 
             const result = fixReflectionTypeNames(pkgDef)
