@@ -13,6 +13,7 @@ export interface GrpcServerConfig {
     services: string[]
     isReflectionEnabled: boolean
     maxReceiveMessageLength: number
+    streamsCloseTimeoutMs?: number
     keepAlive?: GrpcServerKeepalive
 }
 

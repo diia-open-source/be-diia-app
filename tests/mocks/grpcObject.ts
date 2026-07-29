@@ -1,10 +1,18 @@
-import { GrpcObject, ServiceClientConstructor, ServiceDefinition } from '@grpc/grpc-js'
+import { GrpcObject, Metadata, ServiceClientConstructor, ServiceDefinition } from '@grpc/grpc-js'
 
 import { ApiError } from '@diia-inhouse/errors'
-import { ActionVersion, AppUserActionHeaders, HttpStatusCode, ServiceActionArguments, SessionType } from '@diia-inhouse/types'
+import {
+    ActionVersion,
+    AppUserActionHeaders,
+    GenericObject,
+    grpcMetadataKeys,
+    HttpStatusCode,
+    ServiceActionArguments,
+    SessionType,
+} from '@diia-inhouse/types'
 import { ValidationSchema } from '@diia-inhouse/validators'
 
-import { AppAction } from '../../src'
+import { AppAction, GrpcServerStreamAction } from '../../src'
 
 interface GrpcActionArguments extends ServiceActionArguments<AppUserActionHeaders> {
     params: { param: string }
@@ -64,6 +72,32 @@ export const grpcObjectActionRedlock: GrpcObject = {
     } as ServiceClientConstructor,
 }
 
+export class GrpcStreamChannelAction extends GrpcServerStreamAction {
+    readonly name: string = 'action'
+
+    readonly actionVersion: ActionVersion = ActionVersion.V1
+
+    readonly sessionType: SessionType = SessionType.User
+
+    constructor(private readonly onConnectionClosedPromise?: Promise<void>) {
+        super()
+    }
+
+    async handler(): Promise<void> {}
+
+    async onConnectionClosed(): Promise<void> {
+        if (this.onConnectionClosedPromise) {
+            await this.onConnectionClosedPromise
+        }
+    }
+
+    onConnectionOpened(): void {}
+
+    publishTestMessage(mobileUid: string, data: GenericObject): void {
+        this.publishToChannel(mobileUid, data)
+    }
+}
+
 export class GrpcAction implements AppAction {
     readonly name: string = 'action'
 
@@ -75,8 +109,16 @@ export class GrpcAction implements AppAction {
 
     readonly sessionType: SessionType = SessionType.User
 
+    constructor(private readonly onConnectionClosedPromise?: Promise<void>) {}
+
     async handler(args: GrpcActionArguments): Promise<string> {
         return args.params.param
+    }
+
+    async onConnectionClosed(): Promise<void> {
+        if (this.onConnectionClosedPromise) {
+            await this.onConnectionClosedPromise
+        }
     }
 }
 
@@ -115,4 +157,56 @@ export class GrpcActionRedlock implements AppAction {
     async handler(): Promise<boolean> {
         return true
     }
+}
+
+export type StreamEventHandler = (...args: unknown[]) => unknown
+
+export interface MockGrpcStreamInput {
+    metadata: Metadata
+    request?: GenericObject
+    addListener: ReturnType<typeof vi.fn<(event: string, handler: StreamEventHandler) => unknown>>
+    prependListener: ReturnType<typeof vi.fn<(event: string, handler: StreamEventHandler) => unknown>>
+    write: ReturnType<typeof vi.fn<() => unknown>>
+    end: ReturnType<typeof vi.fn<() => unknown>>
+    emit: ReturnType<typeof vi.fn<() => unknown>>
+    destroy: ReturnType<typeof vi.fn<() => unknown>>
+}
+
+export interface CreateStreamInputResult {
+    input: MockGrpcStreamInput
+    listeners: Map<string, StreamEventHandler>
+}
+
+export function createStreamInput(mobileUid?: string): CreateStreamInputResult {
+    const listeners = new Map<string, StreamEventHandler>()
+    const metadata = new Metadata()
+
+    if (mobileUid) {
+        metadata.set(grpcMetadataKeys.MOBILE_UID, mobileUid)
+    }
+
+    const input: MockGrpcStreamInput = {
+        metadata,
+        request: undefined,
+        addListener: vi.fn<(event: string, handler: StreamEventHandler) => unknown>(
+            (event: string, handler: StreamEventHandler): unknown => {
+                listeners.set(event, handler)
+
+                return input
+            },
+        ),
+        prependListener: vi.fn<(event: string, handler: StreamEventHandler) => unknown>(
+            (event: string, handler: StreamEventHandler): unknown => {
+                listeners.set(event, handler)
+
+                return input
+            },
+        ),
+        write: vi.fn<() => unknown>(),
+        end: vi.fn<() => unknown>(),
+        emit: vi.fn<() => unknown>(),
+        destroy: vi.fn<() => unknown>(),
+    }
+
+    return { input, listeners }
 }

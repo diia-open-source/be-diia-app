@@ -156,6 +156,10 @@ export class GrpcServer {
         })
     }
 
+    async preStop(): Promise<void> {
+        this.status = 'NOT_SERVING'
+    }
+
     private isServiceDefinition(
         param: GrpcObject | ServiceClientConstructor | ProtobufTypeDefinition | undefined,
     ): param is ServiceClientConstructor {

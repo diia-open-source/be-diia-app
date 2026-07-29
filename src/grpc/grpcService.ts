@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { setTimeout } from 'node:timers/promises'
 
 import {
     Metadata,
@@ -48,12 +49,19 @@ import {
     MetaTracing,
 } from '../interfaces/index.js'
 import { OnInitResults } from '../interfaces/onInitResults.js'
+import { createGrpcStreamConnectionsObserver, createGrpcStreamPendingCloseObserver } from '../metrics.js'
 import { GrpcServer } from './server.js'
 import { hasProperty } from './utils.js'
 import { registerWrappers } from './wrappers.js'
 
 export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
+    private static readonly defaultStreamCloseTimeoutMs = 50
+
+    private static readonly defaultStreamsCloseTimeoutMs = 10000
+
     private readonly grpcServer: GrpcServer | undefined
+
+    private readonly pendingClosureStreamConnections = new Set<Promise<void>>()
 
     private readonly streamConnections: Map<string, ServerWritableStream<GenericObject, unknown>> = new Map()
 
@@ -95,6 +103,9 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             return
         }
 
+        createGrpcStreamConnectionsObserver(() => this.streamConnections.size, this.serviceName)
+        createGrpcStreamPendingCloseObserver(() => this.pendingClosureStreamConnections.size, this.serviceName)
+
         registerWrappers(this.logger)
         this.grpcServer = new GrpcServer(
             this.config.grpcServer,
@@ -129,12 +140,44 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     }
 
     async onDestroy(): Promise<void> {
+        await this.grpcServer?.preStop()
+
         for (const connection of Array.from(this.streamConnections.values())) {
             connection.end()
         }
 
+        await this.waitUntilStreamConnectionsClose()
+
+        this.pendingClosureStreamConnections.clear()
         this.streamConnections.clear()
+
         await this.grpcServer?.stop()
+    }
+
+    private async waitUntilStreamConnectionsClose(): Promise<void> {
+        if (this.streamConnections.size === 0 && this.pendingClosureStreamConnections.size === 0) {
+            return
+        }
+
+        const timeoutMs = this.config.grpcServer?.streamsCloseTimeoutMs ?? GrpcService.defaultStreamsCloseTimeoutMs
+        const closeAllStreamsDeadline = Date.now() + timeoutMs
+
+        while ((this.streamConnections.size > 0 || this.pendingClosureStreamConnections.size > 0) && Date.now() < closeAllStreamsDeadline) {
+            await setTimeout(GrpcService.defaultStreamCloseTimeoutMs)
+        }
+
+        this.logger.info('Finished waiting for pending streams close', {
+            remainingStreamsSize: this.streamConnections.size,
+            pendingClosureStreamsSize: this.pendingClosureStreamConnections.size,
+        })
+
+        if (this.streamConnections.size > 0 || this.pendingClosureStreamConnections.size > 0) {
+            this.logger.warn('Timed out waiting for grpc stream close handlers', {
+                timeoutMs,
+                remainingStreamsSize: this.streamConnections.size,
+                pendingClosureStreamsSize: this.pendingClosureStreamConnections.size,
+            })
+        }
     }
 
     private provideGrpcServiceImplementation(service: ServiceDefinition): UntypedServiceImplementation {
@@ -264,7 +307,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                                 name: error.getName(),
                             })
 
-                            if ((error.getCode() as ErrorCode) === ErrorCode.SubscriptionsExists) {
+                            if ((error.getProcessCode() as ErrorCode) === ErrorCode.SubscriptionsExists) {
                                 const subscriptions = (error.getData().subscriptions as string[]) ?? []
 
                                 this.logger.info(`Closing existing connections by mobileUid ${mobileUid}`, { subscriptions })
@@ -321,34 +364,13 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                     input.end()
                 })
                 input.prependListener('close', () => {
-                    if ('unsubscribeChannel' in actionInstance && mobileUid) {
-                        actionInstance.unsubscribeChannel({ mobileUid, streamId })
-                        span.addEvent('unsubscribeChannel')
-                    }
+                    const closeConnectionPromise = this.handleActionGRPCStreamClose(actionInstance, streamId, headers, request, span)
 
-                    if ('onConnectionClosed' in actionInstance) {
-                        try {
-                            actionInstance.onConnectionClosed(headers, request)
-                            span.addEvent('onConnectionClosed')
-                        } catch (err) {
-                            utils.handleError(err, (error) => {
-                                span.recordException({
-                                    message: error.getMessage(),
-                                    code: error.getCode(),
-                                    name: error.getName(),
-                                })
+                    const trackedCloseConnectionPromise = closeConnectionPromise.finally(() => {
+                        this.pendingClosureStreamConnections.delete(trackedCloseConnectionPromise)
+                    })
 
-                                this.logger.error('Failed to close action connection gracefully', { err: error })
-                            })
-                        }
-                    }
-
-                    this.logger.info('Grpc stream closed', { streamId })
-
-                    this.streamConnections.delete(streamId)
-
-                    span.addEvent('stream closed')
-                    span.end()
+                    this.pendingClosureStreamConnections.add(trackedCloseConnectionPromise)
                 })
                 input.prependListener('error', (err) => {
                     span.recordException({
@@ -684,6 +706,45 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
                 }
             }
         }
+    }
+
+    private async handleActionGRPCStreamClose(
+        actionInstance: GrpcServerStreamAction,
+        streamId: string,
+        headers: ActHeaders,
+        request: GenericObject,
+        span: Span,
+    ): Promise<void> {
+        const { mobileUid } = headers
+
+        if ('unsubscribeChannel' in actionInstance && mobileUid) {
+            actionInstance.unsubscribeChannel({ mobileUid, streamId })
+            span.addEvent('unsubscribeChannel')
+        }
+
+        if ('onConnectionClosed' in actionInstance) {
+            try {
+                await actionInstance.onConnectionClosed(headers, request)
+                span.addEvent('onConnectionClosed')
+            } catch (err) {
+                utils.handleError(err, (error) => {
+                    span.recordException({
+                        message: error.getMessage(),
+                        code: error.getCode(),
+                        name: error.getName(),
+                    })
+
+                    this.logger.error('Failed to close action connection gracefully', { err: error })
+                })
+            }
+        }
+
+        this.logger.info('Grpc stream closed', { streamId })
+
+        this.streamConnections.delete(streamId)
+
+        span.addEvent('stream closed')
+        span.end()
     }
 
     private prepareServerErrorResponse(apiErr: ApiError, metadata = new Metadata()): ServerErrorResponse {

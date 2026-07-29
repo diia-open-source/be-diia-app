@@ -33,7 +33,7 @@ export interface GrpcAppAction<
 }
 
 export interface GrpcStreamAction extends GrpcAppAction {
-    onConnectionClosed(metadata: ActHeaders, request: GenericObject): void
+    onConnectionClosed(metadata: ActHeaders, request: GenericObject): Promise<void>
 
     onConnectionOpened(metadata: ActHeaders, request: GenericObject): void
 }
@@ -129,7 +129,7 @@ export abstract class GrpcServerStreamAction<
 
     abstract handler(args: T): unknown
 
-    abstract onConnectionClosed(metadata: ActHeaders, request: GenericObject): void
+    abstract onConnectionClosed(metadata: ActHeaders, request: GenericObject): Promise<void>
 
     abstract onConnectionOpened(metadata: ActHeaders, request: GenericObject): void
 }

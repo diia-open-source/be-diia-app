@@ -20,7 +20,7 @@ import lodash from 'lodash'
 import pluralize from 'pluralize'
 import type { Class } from 'type-fest'
 
-import { Counter, MetricOptions, Observer } from '@diia-inhouse/diia-metrics'
+import { Counter, Observer } from '@diia-inhouse/diia-metrics'
 import { Env, EnvService } from '@diia-inhouse/env'
 import { AlsData, Logger, LoggerConstructor, LoggerOptions } from '@diia-inhouse/types'
 
@@ -39,7 +39,8 @@ import {
     ServiceOperator,
 } from './interfaces/application.js'
 import { BaseDeps } from './interfaces/deps.js'
-import { NodeEnvLabelsMap, nodeEnvAllowedFields } from './metrics.js'
+import { NodeEnvLabelsMap } from './interfaces/metrics.js'
+import { createNodeEnvObserver } from './metrics.js'
 
 // oxlint-disable-next-line typescript/unbound-method
 const { camelCase, upperFirst } = lodash
@@ -91,17 +92,7 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
             }).singleton(),
             asyncLocalStorage: asValue(new AsyncLocalStorage<AlsData>()),
         })
-        this.nodeEnvObserver = new Observer<NodeEnvLabelsMap>(
-            'diia_node_env',
-            nodeEnvAllowedFields,
-            'Indicates the NODE_ENV environment value',
-            {
-                onCollect: (): ReturnType<Required<MetricOptions<NodeEnvLabelsMap>>['onCollect']> => ({
-                    labels: { env: this.baseContainer.resolve('envService').getEnv() },
-                    value: 1,
-                }),
-            },
-        )
+        this.nodeEnvObserver = createNodeEnvObserver(() => this.baseContainer.resolve('envService').getEnv())
     }
 
     async setConfig(factory: ConfigFactoryFn<AppConfigType<TContext>>): Promise<this> {

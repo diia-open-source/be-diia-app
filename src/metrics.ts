@@ -1,10 +1,47 @@
-import { KeysOfUnion } from '@diia-inhouse/diia-metrics'
-import { Env } from '@diia-inhouse/env'
+import { MetricOptions, Observer } from '@diia-inhouse/diia-metrics'
 
-export class NodeEnvLabelsMapConcrete {
-    env: string = Env.Local
+import {
+    grpcStreamMetricAllowedFields,
+    GrpcStreamMetricLabelsMap,
+    MetricDescriptions,
+    MetricNames,
+    nodeEnvAllowedFields,
+    NodeEnvLabelsMap,
+} from './interfaces/metrics.js'
+
+export function createNodeEnvObserver(getEnv: () => string): Observer<NodeEnvLabelsMap> {
+    return new Observer<NodeEnvLabelsMap>(MetricNames.NodeEnv, nodeEnvAllowedFields, MetricDescriptions.NodeEnv, {
+        onCollect: (): ReturnType<Required<MetricOptions<NodeEnvLabelsMap>>['onCollect']> => ({
+            labels: { env: getEnv() },
+            value: 1,
+        }),
+    })
 }
 
-export type NodeEnvLabelsMap = NodeEnvLabelsMapConcrete
+export function createGrpcStreamConnectionsObserver(onCollect: () => number, serviceName: string): Observer<GrpcStreamMetricLabelsMap> {
+    return new Observer<GrpcStreamMetricLabelsMap>(
+        MetricNames.GrpcStreamConnections,
+        grpcStreamMetricAllowedFields,
+        MetricDescriptions.GrpcStreamConnections,
+        {
+            onCollect: () => ({
+                labels: { service: serviceName },
+                value: onCollect(),
+            }),
+        },
+    )
+}
 
-export const nodeEnvAllowedFields = Object.keys(new NodeEnvLabelsMapConcrete()) as KeysOfUnion<NodeEnvLabelsMap>[]
+export function createGrpcStreamPendingCloseObserver(onCollect: () => number, serviceName: string): Observer<GrpcStreamMetricLabelsMap> {
+    return new Observer<GrpcStreamMetricLabelsMap>(
+        MetricNames.GrpcStreamPendingClose,
+        grpcStreamMetricAllowedFields,
+        MetricDescriptions.GrpcStreamPendingClose,
+        {
+            onCollect: () => ({
+                labels: { service: serviceName },
+                value: onCollect(),
+            }),
+        },
+    )
+}
