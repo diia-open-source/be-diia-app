@@ -71,12 +71,27 @@ export default class MoleculerService implements OnInit, OnDestroy {
 
     async onInit(): Promise<void> {
         const disableActions = this.config.disableMoleculerActions === true
+        const events = this.moleculerEvents ?? {}
+
+        // A node with no actions and no events has nothing to advertise. Registering it anyway
+        // publishes an empty service under this.serviceName that collides in the registry with the
+        // real action-serving instance of the same name (e.g. a standalone worker shadowing the main
+        // service), breaking name-based lookups. Start a client-only broker instead — outbound
+        // broker.call still works.
+        if (disableActions && Object.keys(events).length === 0) {
+            this.logger.info('Moleculer actions disabled and no events; starting client-only broker (no service registered)')
+
+            await this.serviceBroker.start()
+
+            return
+        }
+
         if (disableActions) {
             this.logger.info('Moleculer actions are disabled for this node; registering no actions')
         }
 
         const serviceActions = disableActions ? {} : this.createActions(this.actionList)
-        const serviceSchema: ServiceSchema = { name: this.serviceName, actions: serviceActions, events: this.moleculerEvents ?? {} }
+        const serviceSchema: ServiceSchema = { name: this.serviceName, actions: serviceActions, events }
         const options = disableActions ? serviceSchema : this.addApiService(serviceSchema)
 
         this.service = this.serviceBroker.createService(options)

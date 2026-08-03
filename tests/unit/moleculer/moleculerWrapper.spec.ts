@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
-import { Service } from 'moleculer'
+import { Service, ServiceEvents } from 'moleculer'
 import { mock } from 'vitest-mock-extended'
 
 import Logger from '@diia-inhouse/diia-logger'
@@ -59,7 +59,7 @@ describe(MoleculerService.name, () => {
             expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
         })
 
-        it('should register no actions but still start the broker when disableMoleculerActions is true', async () => {
+        it('should skip service registration but still start the broker when actions are disabled and there are no events', async () => {
             const moleculerService = new MoleculerService(
                 serviceName,
                 systemServiceName,
@@ -80,7 +80,33 @@ describe(MoleculerService.name, () => {
 
             await moleculerService.onInit()
 
-            expect(createService).toHaveBeenCalledWith(expect.objectContaining({ name: serviceName, actions: {} }))
+            expect(createService).not.toHaveBeenCalled()
+            expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
+        })
+
+        it('should register an events-only service (no actions) when actions are disabled but events exist', async () => {
+            const moleculerEvents: ServiceEvents = { 'some.event': () => undefined }
+            const moleculerService = new MoleculerService(
+                serviceName,
+                systemServiceName,
+                actionExecutor,
+                [appAction],
+                { ...cfg, disableMoleculerActions: true },
+                asyncLocalStorage,
+                logger,
+                envService,
+                metrics,
+                moleculerEvents,
+                appApiService,
+            )
+
+            const createService = vi.spyOn(moleculerService.serviceBroker, 'createService').mockReturnValue({} as Service)
+
+            vi.spyOn(moleculerService.serviceBroker, 'start').mockResolvedValue()
+
+            await moleculerService.onInit()
+
+            expect(createService).toHaveBeenCalledWith(expect.objectContaining({ name: serviceName, actions: {}, events: moleculerEvents }))
             expect(moleculerService.serviceBroker.start).toHaveBeenCalled()
         })
 
