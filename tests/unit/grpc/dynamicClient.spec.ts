@@ -283,3 +283,58 @@ describe('DynamicGrpcClient enum conversion', () => {
         client.close()
     })
 })
+
+const buildMapEntryRoot = (): protobuf.Root => {
+    const entry = new protobuf.Type('Scopes').add(new protobuf.Field('key', 1, 'string')).add(new protobuf.Field('value', 2, 'string'))
+    const message = new protobuf.Type('UserData').add(entry).add(new protobuf.Field('scopes', 2, 'Scopes', 'repeated'))
+    const root = new protobuf.Root()
+
+    root.add(new protobuf.Namespace('test').add(message))
+
+    return root
+}
+
+const restoreMapFields = (client: DynamicGrpcClient, root: protobuf.Root): void => {
+    ;(client as unknown as { restoreMapFields: (ns: protobuf.NamespaceBase) => void }).restoreMapFields(root)
+}
+
+describe('DynamicGrpcClient map field restoration', () => {
+    const logger = mock<Logger>()
+
+    it('turns a repeated key/value entry into a map field', () => {
+        const client = new DynamicGrpcClient(logger)
+        const root = buildMapEntryRoot()
+
+        restoreMapFields(client, root)
+
+        const field = root.lookupType('test.UserData').fields.scopes
+
+        expect(field).toBeInstanceOf(protobuf.MapField)
+        expect(field).toMatchObject({ keyType: 'string', type: 'string' })
+    })
+
+    it('decodes a map field back to an object once restored', () => {
+        const client = new DynamicGrpcClient(logger)
+        const root = buildMapEntryRoot()
+
+        restoreMapFields(client, root)
+
+        const type = root.lookupType('test.UserData')
+        const buffer = type.encode(type.create({ scopes: { pd_user_documents: '[]' } })).finish()
+
+        expect(type.toObject(type.decode(buffer))).toEqual({ scopes: { pd_user_documents: '[]' } })
+    })
+
+    it('leaves a repeated message that is not an entry alone', () => {
+        const client = new DynamicGrpcClient(logger)
+        const item = new protobuf.Type('Item').add(new protobuf.Field('scope', 1, 'string'))
+        const message = new protobuf.Type('Holder').add(item).add(new protobuf.Field('items', 1, 'Item', 'repeated'))
+        const root = new protobuf.Root()
+
+        root.add(new protobuf.Namespace('test').add(message))
+
+        restoreMapFields(client, root)
+
+        expect(root.lookupType('test.Holder').fields.items).not.toBeInstanceOf(protobuf.MapField)
+    })
+})

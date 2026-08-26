@@ -1,4 +1,5 @@
 import { AnyDefinition, PackageDefinition } from '@grpc/proto-loader'
+import lodash from 'lodash'
 import descriptorExt from 'protobufjs/ext/descriptor/index.js'
 
 const { FileDescriptorProto } = descriptorExt
@@ -14,6 +15,7 @@ interface MessageDescriptor {
     name: string
     field?: FieldDescriptor[]
     nestedType?: MessageDescriptor[]
+    options?: { mapEntry?: boolean }
 }
 
 interface ExtensionDescriptor {
@@ -241,8 +243,43 @@ function applyFixes(fd: FileDescriptor, packageMap: Map<string, string[]>, typeM
     return modified
 }
 
-function fixMessageTypeNames(mt: MessageDescriptor, packageMap: Map<string, string[]>, typeMap: Map<string, string[]>): boolean {
+/** protobufjs emits `ucFirst(fieldName)`; protobuf requires `<CamelCasedFieldName>Entry`. */
+function fixMapEntryNames(mt: MessageDescriptor): boolean {
+    if (!mt.field || !mt.nestedType) {
+        return false
+    }
+
     let modified = false
+
+    for (const field of mt.field) {
+        if (!field.typeName) {
+            continue
+        }
+
+        const simpleName = field.typeName.split('.').pop()
+        const entry = mt.nestedType.find((nested) => nested.name === simpleName && nested.options?.mapEntry)
+
+        if (!entry) {
+            continue
+        }
+
+        const expectedName = `${field.name
+            .split('_')
+            .map((part) => lodash.upperFirst(part))
+            .join('')}Entry`
+
+        if (entry.name !== expectedName) {
+            entry.name = expectedName
+            field.typeName = field.typeName.replace(/[^.]+$/, expectedName)
+            modified = true
+        }
+    }
+
+    return modified
+}
+
+function fixMessageTypeNames(mt: MessageDescriptor, packageMap: Map<string, string[]>, typeMap: Map<string, string[]>): boolean {
+    let modified = fixMapEntryNames(mt)
 
     if (mt.field) {
         for (const field of mt.field) {

@@ -11,7 +11,7 @@ const createFileDescriptor = (options: {
     messageType?: {
         name: string
         field?: { name: string; typeName?: string }[]
-        nestedType?: { name: string; field?: { name: string; typeName?: string }[] }[]
+        nestedType?: { name: string; field?: { name: string; typeName?: string }[]; options?: { mapEntry?: boolean } }[]
     }[]
     enumType?: { name: string }[]
     service?: {
@@ -36,6 +36,71 @@ const createPackageDefinition = (buffers: Buffer[]): PackageDefinition => {
 }
 
 describe('fixReflectionTypeNames', () => {
+    describe('map entry names', () => {
+        interface DecodedMapEntry {
+            name: string
+            typeName?: string
+        }
+
+        const decode = (result: PackageDefinition): DecodedMapEntry => {
+            const [buffer] = (result['test.Service'] as never as { fileDescriptorProtos: Buffer[] }).fileDescriptorProtos
+            const [messageType] = FileDescriptorProto.decode(buffer).toJSON().messageType
+
+            return { name: messageType.nestedType[0].name, typeName: messageType.field[0].typeName }
+        }
+
+        it('appends the Entry suffix protobufjs leaves off', () => {
+            const buffer = createFileDescriptor({
+                name: 'test.proto',
+                package: 'ua.gov.diia.test',
+                messageType: [
+                    {
+                        name: 'UserData',
+                        field: [{ name: 'scopes', typeName: '.ua.gov.diia.test.UserData.Scopes' }],
+                        nestedType: [{ name: 'Scopes', options: { mapEntry: true } }],
+                    },
+                ],
+            })
+
+            const { name, typeName } = decode(fixReflectionTypeNames(createPackageDefinition([buffer])))
+
+            expect(name).toBe('ScopesEntry')
+            expect(typeName).toBe('.ua.gov.diia.test.UserData.ScopesEntry')
+        })
+
+        it('camel cases a snake case field name', () => {
+            const buffer = createFileDescriptor({
+                name: 'test.proto',
+                package: 'ua.gov.diia.test',
+                messageType: [
+                    {
+                        name: 'UserData',
+                        field: [{ name: 'rows_by_scope', typeName: '.ua.gov.diia.test.UserData.Rows_by_scope' }],
+                        nestedType: [{ name: 'Rows_by_scope', options: { mapEntry: true } }],
+                    },
+                ],
+            })
+
+            expect(decode(fixReflectionTypeNames(createPackageDefinition([buffer]))).name).toBe('RowsByScopeEntry')
+        })
+
+        it('leaves a nested message that is not a map entry alone', () => {
+            const buffer = createFileDescriptor({
+                name: 'test.proto',
+                package: 'ua.gov.diia.test',
+                messageType: [
+                    {
+                        name: 'UserData',
+                        field: [{ name: 'scopes', typeName: '.ua.gov.diia.test.UserData.Scopes' }],
+                        nestedType: [{ name: 'Scopes' }],
+                    },
+                ],
+            })
+
+            expect(decode(fixReflectionTypeNames(createPackageDefinition([buffer]))).name).toBe('Scopes')
+        })
+    })
+
     describe('returns input unchanged when', () => {
         it('input is null or undefined', () => {
             expect(fixReflectionTypeNames(null as never)).toBeNull()

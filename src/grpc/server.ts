@@ -180,12 +180,12 @@ export class GrpcServer {
             return
         }
 
-        const fixedPkgDefs = fixReflectionTypeNames(pkgDefs)
-        const reflection = new ReflectionService(fixedPkgDefs)
+        const conformantPkgDefs = fixReflectionTypeNames(pkgDefs)
+        const reflection = new ReflectionService(conformantPkgDefs)
 
         reflection.addToServer(this.server)
 
-        await SchemaReflectionInitializer.initialize(internalProtos, includeDirs, pkgDefs, this.schemaRegistry, this.logger)
+        await SchemaReflectionInitializer.initialize(internalProtos, includeDirs, conformantPkgDefs, this.schemaRegistry, this.logger)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const schemaReflectionService = (serviceProto.diia as any)?.schema?.v1?.SchemaReflection?.service

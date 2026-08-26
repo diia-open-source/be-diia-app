@@ -425,6 +425,43 @@ export class DynamicGrpcClient {
         return builtins.includes(typeName)
     }
 
+    /** protobufjs writes map fields to a descriptor but never reads them back as maps. */
+    private restoreMapFields(namespace: protobuf.NamespaceBase): void {
+        for (const nested of namespace.nestedArray) {
+            if (nested instanceof protobuf.Type) {
+                this.restoreMapFieldsOfType(nested)
+            }
+
+            if (nested instanceof protobuf.Namespace) {
+                this.restoreMapFields(nested)
+            }
+        }
+    }
+
+    private restoreMapFieldsOfType(type: protobuf.Type): void {
+        for (const field of type.fieldsArray.slice()) {
+            if (!field.repeated || field instanceof protobuf.MapField) {
+                continue
+            }
+
+            const entryType = type.get(field.type)
+
+            if (!(entryType instanceof protobuf.Type) || entryType.fieldsArray.length !== 2) {
+                continue
+            }
+
+            const keyField = entryType.get('key')
+            const valueField = entryType.get('value')
+
+            if (!(keyField instanceof protobuf.Field) || !(valueField instanceof protobuf.Field)) {
+                continue
+            }
+
+            type.remove(field)
+            type.add(new protobuf.MapField(field.name, field.id, keyField.type, valueField.type, undefined, field.comment ?? undefined))
+        }
+    }
+
     private mergeDescriptorsIntoRoot(root: protobuf.Root, fileDescriptors: Buffer[]): void {
         const decoded: unknown[] = []
         for (const buffer of fileDescriptors) {
@@ -458,6 +495,8 @@ export class DynamicGrpcClient {
             for (const nested of parsed.nestedArray) {
                 this.mergeIntoNamespace(root, nested)
             }
+
+            this.restoreMapFields(root)
         } catch (err) {
             this.logger.warn('Failed to parse file descriptors', { err })
         } finally {
