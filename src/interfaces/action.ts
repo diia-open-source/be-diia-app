@@ -13,6 +13,11 @@ export interface AppAction<T extends ActionContext<Record<never, never>, BaseSes
     actionVersion?: ActionVersion
     name: string
     validationRules?: ValidationSchema
+    /**
+     * exposes the action at `POST /action/<name>` on the service's HTTP server.
+     * Takes effect only when the service registers `Server` from `@diia-inhouse/http-server`
+     */
+    isHttpEnabled?: boolean
 
     /** @info use only for development! */
     __actionResponse?: GenericObject
