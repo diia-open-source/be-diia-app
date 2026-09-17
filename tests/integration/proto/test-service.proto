@@ -12,6 +12,7 @@ service Test {
   rpc GetTestWithCtx(GetTestReq) returns (GetTestRes) {};
   rpc ThrowError(ThrowErrorReq) returns (GetTestRes) {};
   rpc LockResource(LockResourceReq) returns (GetTestRes) {};
+  rpc TryLockResource(LockResourceReq) returns (GetTestRes) {};
   rpc EchoParams(EchoParamsReq) returns (EchoParamsRes) {};
 }
 

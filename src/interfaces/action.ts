@@ -22,6 +22,10 @@ export interface AppAction<T extends ActionContext<Record<never, never>, BaseSes
     /** @info use only for development! */
     __actionResponse?: GenericObject
 
+    /**
+     * Maximum time in milliseconds to wait for the lock resource; once it elapses the handler runs without the lock.
+     * By default the executor waits for twice the lock ttl
+     */
     tryLockTimeout?: number
     getLockResource?(args: T): string
     getServiceCode?(args: T): string

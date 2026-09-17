@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "34.1.1",
+    "version": "34.1.2",
     "type": "module",
     "description": "Application package with IoC container",
     "main": "dist/index.js",
@@ -76,7 +76,6 @@
         "nats": "2.29.3",
         "nice-grpc": "2.1.16",
         "nice-grpc-client-middleware-deadline": "2.0.19",
-        "p-timeout": "4.1.0",
         "pluralize": "8.0.0",
         "protobufjs": "7.6.5",
         "ts-patch": "3.3.0"
@@ -132,7 +131,7 @@
         "@diia-inhouse/genproto": "4.0.12",
         "@diia-inhouse/healthcheck": "2.1.119",
         "@diia-inhouse/oxc-config": "2.1.6",
-        "@diia-inhouse/redis": "3.1.77",
+        "@diia-inhouse/redis": "3.2.0",
         "@diia-inhouse/test": "8.3.18",
         "@diia-inhouse/types": "14.2.10",
         "@diia-inhouse/utils": "6.1.6",

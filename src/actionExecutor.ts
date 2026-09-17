@@ -1,7 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { Context, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
-import pTimeout from 'p-timeout'
 
 import { MetricsService, RequestMechanism, RequestStatus } from '@diia-inhouse/diia-metrics'
 import { ErrorType } from '@diia-inhouse/errors'
@@ -97,15 +96,16 @@ export class ActionExecutor {
                     const lockResource = `${action.name}.${actionLockResource}`
 
                     try {
-                        lock = await pTimeout(
-                            this.redlock.lock(lockResource, this.actionLockTtl).catch((err) => {
-                                this.logger.error(`Caught error while acquiring lock for action: ${actionName}`, { err })
-                            }),
-                            action.tryLockTimeout ?? Infinity,
-                            () => {},
-                        )
+                        if (action.tryLockTimeout) {
+                            lock = await this.redlock.tryLock(lockResource, this.actionLockTtl, { acquireTimeout: action.tryLockTimeout })
+                            if (!lock) {
+                                this.logger.warn(`Lock resource is busy, executing action without lock: ${actionName}`)
+                            }
+                        } else {
+                            lock = await this.redlock.lock(lockResource, this.actionLockTtl)
+                        }
                     } catch (err) {
-                        this.logger.error(`Failed to acquire lock for action: ${actionName}`, { err })
+                        this.logger.error(`Caught error while acquiring lock for action: ${actionName}`, { err })
                     }
                 }
 

@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto'
+import { setTimeout as sleep } from 'node:timers/promises'
+
 import { ErrorType } from '@diia-inhouse/errors'
 import { RedlockService } from '@diia-inhouse/redis'
 import TestKit from '@diia-inhouse/test'
-import { GenericObject, HttpStatusCode, SessionType } from '@diia-inhouse/types'
+import { GenericObject, HttpStatusCode, Logger, SessionType } from '@diia-inhouse/types'
 
 import { GrpcService, clientCallOptions } from '../../../src'
 import { TestClient, TestPrivateClient } from '../generated'
@@ -212,5 +215,45 @@ describe('grpcService', () => {
 
         expect(status).toBe('ok')
         expect(redlockSpy).toHaveBeenCalledWith('lockResource.123', 30000)
+    })
+
+    describe('action with tryLockTimeout', () => {
+        it('should warn and run the handler without the lock when the resource stays busy', async () => {
+            const logger = app.container.resolve<Logger>('logger')
+            const warnSpy = vi.spyOn(logger, 'warn')
+            const errorSpy = vi.spyOn(logger, 'error')
+            const id = randomUUID()
+            const holder = await redlock.lock(`tryLockResource.${id}`, 30000)
+
+            try {
+                const { status } = await testServiceClient.tryLockResource({ id })
+
+                expect(status).toBe('ok')
+                expect(warnSpy).toHaveBeenCalledWith(
+                    'Lock resource is busy, executing action without lock: /ua.gov.diia.test.Test/TryLockResource',
+                )
+                expect(errorSpy).not.toHaveBeenCalledWith(expect.stringContaining('acquiring lock'), expect.anything())
+            } finally {
+                await holder.release()
+            }
+        })
+
+        it('should not leave the lock orphaned after giving up on a locked resource', async () => {
+            const id = randomUUID()
+            const resource = `tryLockResource.${id}`
+            const holder = await redlock.lock(resource, 30000)
+
+            const { status } = await testServiceClient.tryLockResource({ id })
+
+            expect(status).toBe('ok')
+
+            await holder.release()
+            // an abandoned acquire keeps retrying every 500ms and would grab the freed lock
+            await sleep(1000)
+
+            const lock = await redlock.lock(resource, 1000, { acquireTimeout: 100 })
+
+            await lock.release()
+        })
     })
 })
