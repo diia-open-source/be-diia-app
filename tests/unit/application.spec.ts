@@ -7,12 +7,12 @@ import { Logger } from '@diia-inhouse/types'
 import { Application, DepsType, OnStartHooksResult, ServiceContext, asValue } from '../../src'
 
 class FailingStartupApplication extends Application<ServiceContext> {
-    protected async runOnStartHooks(): Promise<OnStartHooksResult> {
-        throw new Error('startup failed')
-    }
-
     startService(): Promise<OnStartHooksResult> {
         return this['start']()
+    }
+
+    protected async runOnStartHooks(): Promise<OnStartHooksResult> {
+        throw new Error('startup failed')
     }
 }
 
