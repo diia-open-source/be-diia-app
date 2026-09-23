@@ -110,8 +110,12 @@ export class ActionExecutor {
                 }
 
                 try {
+                    const operatedValidationSessionTypes: SessionType[] = [SessionType.Partner, SessionType.Acquirer]
+
                     const validationSchema = { params: { type: 'object', props: action.validationRules } }
-                    const validationErrorType = session?.sessionType === SessionType.Partner ? ErrorType.Operated : undefined
+                    const validationErrorType = operatedValidationSessionTypes.includes(session?.sessionType)
+                        ? ErrorType.Operated
+                        : undefined
 
                     this.validator.validate(actionArguments, validationSchema, validationErrorType)
 
