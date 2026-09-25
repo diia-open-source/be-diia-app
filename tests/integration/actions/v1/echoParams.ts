@@ -14,6 +14,7 @@ export default class EchoParamsAction implements GrpcAppAction {
         nickname: { type: 'string', optional: true },
         nested: { type: 'object', optional: true },
         items: { type: 'array', optional: true },
+        plain: { type: 'object', optional: true },
     }
 
     async handler(args: CustomActionArguments): Promise<ActionResult> {

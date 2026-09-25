@@ -48,6 +48,7 @@ message EchoParamsReq {
   optional string nickname = 2;
   optional EchoNestedMsg nested = 3;
   repeated EchoNestedMsg items = 4;
+  EchoNestedMsg plain = 5;
 }
 
 message EchoNestedMsg {

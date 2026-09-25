@@ -525,7 +525,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
     }
 
     private async executeAction(action: GrpcAppAction, metadata: Metadata, headers: ActHeaders, params: GenericObject): Promise<unknown> {
-        this.stripSyntheticOneofFields(params)
+        this.stripDecoderArtifacts(params)
 
         const actionArguments = {
             session: this.prepareActSessionFromGrpcInput(metadata) || { sessionType: SessionType.None },
@@ -688,20 +688,27 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         return value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)
     }
 
-    private stripSyntheticOneofFields(obj: GenericObject): void {
+    // Removes keys proto-loader adds that the caller never sent: `null` for an absent message field
+    // and the synthetic `_field` oneof key of a proto3 `optional` field
+    private stripDecoderArtifacts(obj: GenericObject): void {
         for (const key of Object.keys(obj)) {
             const value = obj[key]
+            if (value === null) {
+                delete obj[key]
+                continue
+            }
+
             if (key.startsWith('_') && typeof value === 'string' && key === `_${value}` && value in obj) {
                 delete obj[key]
                 continue
             }
 
             if (this.isPlainObject(value)) {
-                this.stripSyntheticOneofFields(value)
+                this.stripDecoderArtifacts(value)
             } else if (Array.isArray(value)) {
                 for (const item of value) {
                     if (this.isPlainObject(item)) {
-                        this.stripSyntheticOneofFields(item)
+                        this.stripDecoderArtifacts(item)
                     }
                 }
             }

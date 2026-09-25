@@ -208,6 +208,22 @@ describe('grpcService', () => {
         })
     })
 
+    describe('absent message fields', () => {
+        it('should not pass an omitted message field to the action as null', async () => {
+            const { paramsJson } = await testServiceClient.echoParams({ name: 'John' })
+            const params = JSON.parse(paramsJson)
+
+            expect(params).not.toHaveProperty('plain')
+        })
+
+        it('should pass a present message field to the action', async () => {
+            const { paramsJson } = await testServiceClient.echoParams({ name: 'John', plain: { value: 'v' } })
+            const params = JSON.parse(paramsJson)
+
+            expect(params.plain).toEqual({ value: 'v' })
+        })
+    })
+
     it('should lock resource', async () => {
         const redlockSpy = vi.spyOn(redlock, 'lock')
 
