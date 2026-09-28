@@ -626,6 +626,14 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
             headers.token = metadata.get(grpcMetadataKeys.TOKEN)[0] as string
         }
 
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.TICKET)) {
+            headers.ticket = metadata.get(grpcMetadataKeys.TICKET)[0] as string
+        }
+
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.CHANNEL_UUID)) {
+            headers.channelUuid = metadata.get(grpcMetadataKeys.CHANNEL_UUID)[0] as string
+        }
+
         return headers
     }
 

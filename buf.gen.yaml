@@ -1,0 +1,7 @@
+version: v2
+inputs:
+    - directory: tests/integration/proto
+plugins:
+    - local: protoc-gen-diia-ts
+      out: tests/integration/generated
+      strategy: all
