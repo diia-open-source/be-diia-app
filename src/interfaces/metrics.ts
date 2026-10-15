@@ -1,4 +1,4 @@
-import { KeysOfUnion } from 'type-fest'
+import type { KeysOfUnion } from 'type-fest'
 
 import { Env } from '@diia-inhouse/env'
 

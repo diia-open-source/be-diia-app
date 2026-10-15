@@ -11,5 +11,11 @@ export default defineConfig({
                 'eslint/no-restricted-imports': 'off',
             },
         },
+        {
+            files: ['src/plugins/openapi/**'],
+            rules: {
+                '@diia-inhouse/package/no-dev-dependency-import': 'off',
+            },
+        },
     ],
 })
