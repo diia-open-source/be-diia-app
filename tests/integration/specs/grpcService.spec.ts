@@ -4,7 +4,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { ErrorType } from '@diia-inhouse/errors'
 import { RedlockService } from '@diia-inhouse/redis'
 import TestKit from '@diia-inhouse/test'
-import { GenericObject, HttpStatusCode, Logger, SessionType } from '@diia-inhouse/types'
+import { ActHeaders, ConnectionModes, GenericObject, HttpStatusCode, Logger, SessionType, grpcMetadataKeys } from '@diia-inhouse/types'
 
 import { GrpcService, clientCallOptions } from '../../../src'
 import { TestClient, TestPrivateClient } from '../generated'
@@ -96,6 +96,30 @@ describe('grpcService', () => {
         const { status } = await testServiceClient.getTest({ timeoutMs: 1 }, clientCallOptions({ session }))
 
         expect(status).toBe('ok')
+    })
+
+    it('should pass the connection mode from metadata to the action headers', async () => {
+        const grpcService = app.container.resolve<GrpcService>('grpcService')
+        const originalExecuteAction = grpcService['executeAction'].bind(grpcService)
+        let capturedHeaders: ActHeaders | undefined
+
+        grpcService['executeAction'] = async (action, metadata, headers, params): Promise<unknown> => {
+            capturedHeaders = headers
+
+            return await originalExecuteAction(action, metadata, headers, params)
+        }
+
+        try {
+            const options = clientCallOptions({ session: testKit.session.getUserSession() })
+
+            options.metadata?.set(grpcMetadataKeys.CONNECTION_MODE, ConnectionModes.DirectToCell)
+
+            await testServiceClient.getTest({ timeoutMs: 1 }, options)
+
+            expect(capturedHeaders?.connectionMode).toBe(ConnectionModes.DirectToCell)
+        } finally {
+            grpcService['executeAction'] = originalExecuteAction
+        }
     })
 
     describe('synthetic oneof fields', () => {

@@ -21,6 +21,7 @@ import {
     ActHeaders,
     ActionSession,
     ActionVersion,
+    ConnectionMode,
     GenericObject,
     GrpcStatusCode,
     HealthCheckResult,
@@ -632,6 +633,10 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
 
         if (this.hasMetadataProperty(metadata, grpcMetadataKeys.CHANNEL_UUID)) {
             headers.channelUuid = metadata.get(grpcMetadataKeys.CHANNEL_UUID)[0] as string
+        }
+
+        if (this.hasMetadataProperty(metadata, grpcMetadataKeys.CONNECTION_MODE)) {
+            headers.connectionMode = metadata.get(grpcMetadataKeys.CONNECTION_MODE)[0] as ConnectionMode
         }
 
         return headers

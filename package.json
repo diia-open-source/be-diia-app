@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "34.3.11",
+    "version": "34.4.0",
     "description": "Application package with IoC container",
     "license": "SEE LICENSE IN LICENSE.md",
     "author": "diia-team",
@@ -90,7 +90,7 @@
         "@diia-inhouse/oxc-config": "5.0.0",
         "@diia-inhouse/redis": "3.2.29",
         "@diia-inhouse/test": "8.3.40",
-        "@diia-inhouse/types": "14.6.1",
+        "@diia-inhouse/types": "14.7.0",
         "@diia-inhouse/utils": "6.1.30",
         "@diia-inhouse/validators": "2.2.114",
         "@opentelemetry/instrumentation-amqplib": "0.65.0",
@@ -124,7 +124,7 @@
         "@diia-inhouse/features": ">=3.0.0",
         "@diia-inhouse/healthcheck": ">=2.0.0",
         "@diia-inhouse/redis": ">=3.0.0",
-        "@diia-inhouse/types": ">=14.3.0",
+        "@diia-inhouse/types": ">=14.7.0",
         "@diia-inhouse/utils": ">=6.0.0",
         "@diia-inhouse/validators": ">=2.0.0"
     },
