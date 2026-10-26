@@ -14,6 +14,7 @@ import {
 import { Span, SpanKind, SpanStatusCode, context, propagation, trace } from '@opentelemetry/api'
 
 import { RequestMechanism } from '@diia-inhouse/diia-metrics'
+import type { EnvService } from '@diia-inhouse/env'
 import { ApiError, HttpError } from '@diia-inhouse/errors'
 import { FeatureService } from '@diia-inhouse/features'
 import type { HealthCheck } from '@diia-inhouse/healthcheck'
@@ -92,6 +93,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         private readonly config: BaseConfig,
         private readonly actionList: AppAction[],
         private readonly logger: Logger,
+        private readonly envService: EnvService,
         private readonly actionExecutor: ActionExecutor,
         private readonly systemServiceName: string,
         private readonly serviceName: string,
@@ -111,6 +113,7 @@ export class GrpcService implements OnInit, OnDestroy, OnHealthCheck {
         this.grpcServer = new GrpcServer(
             this.config.grpcServer,
             this.logger,
+            this.envService,
             this.config.healthCheck?.isEnabled ? this.healthCheck : undefined,
             this.serviceName,
             utils.getServiceVersion(),

@@ -12,6 +12,7 @@ import { PackageDefinition, load } from '@grpc/proto-loader'
 import { ReflectionService } from '@grpc/reflection'
 import { glob } from 'glob'
 
+import type { EnvService } from '@diia-inhouse/env'
 import { GrpcHealthCheckImplementation, HealthCheck, protoPath as healthProtoPath } from '@diia-inhouse/healthcheck'
 import type { Logger } from '@diia-inhouse/types'
 
@@ -37,6 +38,7 @@ export class GrpcServer {
     constructor(
         private readonly config: GrpcServerConfig,
         private readonly logger: Logger,
+        private readonly envService: EnvService,
         private readonly healthCheck: HealthCheck | undefined,
         private readonly serviceName = '',
         private readonly version = '',
@@ -56,7 +58,7 @@ export class GrpcServer {
             this.health = new GrpcHealthCheckImplementation(this.healthCheck)
         }
 
-        if (this.config.isReflectionEnabled) {
+        if (this.config.isReflectionEnabled && !this.envService.isProd()) {
             this.schemaRegistry = new SchemaRegistry()
         }
     }

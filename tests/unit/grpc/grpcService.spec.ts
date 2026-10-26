@@ -1,9 +1,11 @@
 import * as grpc from '@grpc/grpc-js'
 import { Metadata, Server, ServerCredentials, ServerUnaryCall, handleUnaryCall } from '@grpc/grpc-js'
+import { ReflectionService } from '@grpc/reflection'
 import { cloneDeep, set } from 'lodash'
 import { mock } from 'vitest-mock-extended'
 
 import Logger from '@diia-inhouse/diia-logger'
+import { EnvService } from '@diia-inhouse/env'
 import { ApiError } from '@diia-inhouse/errors'
 import { FeatureService } from '@diia-inhouse/features'
 import TestKit from '@diia-inhouse/test'
@@ -53,6 +55,7 @@ const serviceName = 'ServiceName'
 describe(GrpcService.name, () => {
     const testKit = new TestKit()
     const actionExecutor = mock<ActionExecutor>()
+    const envService = mock<EnvService>({ isProd: vi.fn<() => boolean>() })
     // oxlint-disable-next-line vitest/require-mock-type-parameters
     const featureFlag = mock<FeatureService>({ isEnabled: vi.fn() })
     // oxlint-disable-next-line vitest/require-mock-type-parameters
@@ -74,6 +77,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, isEnabled: false } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -94,6 +98,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: [] } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -113,12 +118,46 @@ describe(GrpcService.name, () => {
             expect(initResult).toEqual({ serverPort: expect.any(Number) })
         })
 
+        it.each([
+            { isProd: false, expectedCalls: 1 },
+            { isProd: true, expectedCalls: 0 },
+        ])(
+            'should register reflection service $expectedCalls time(s) when it is enabled in config and isProd is $isProd',
+            async ({ isProd, expectedCalls }) => {
+                // Arrange
+                vi.spyOn(envService, 'isProd').mockReturnValue(isProd)
+
+                const grpcService = new GrpcService(
+                    { grpcServer: { ...config, services: [] } },
+                    [],
+                    logger,
+                    envService,
+                    actionExecutor,
+                    systemServiceName,
+                    serviceName,
+                    undefined,
+                    featureFlag,
+                )
+
+                vi.spyOn(Server.prototype, 'bindAsync').mockImplementationOnce((_port: string, _creds: ServerCredentials, cb) => {
+                    cb(null, 5000)
+                })
+
+                // Act
+                await grpcService.onInit()
+
+                // Assert
+                expect(ReflectionService).toHaveBeenCalledTimes(expectedCalls)
+            },
+        )
+
         it('should throw error if originalName was not provided for method', async () => {
             // Arrange
             const grpcService = new GrpcService(
                 { grpcServer: config },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -143,6 +182,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: [] } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -169,6 +209,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: config },
                 [new GrpcAction()],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -211,6 +252,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: config },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -232,6 +274,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: [] } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -262,6 +305,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: [] } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -295,6 +339,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: ['service-with-stream-action'] } },
                 [new GrpcStreamChannelAction(onConnectionClosedPromise)],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -354,6 +399,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: ['service-with-stream-action'] } },
                 [streamAction],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -412,6 +458,7 @@ describe(GrpcService.name, () => {
                 },
                 [new GrpcStreamChannelAction(onConnectionClosedPromise)],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -469,6 +516,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: ['service-with-stream-action'] } },
                 [new GrpcStreamChannelAction(onConnectionClosedPromise)],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -529,6 +577,7 @@ describe(GrpcService.name, () => {
                 { grpcServer: { ...config, services: [] } },
                 [],
                 logger,
+                envService,
                 actionExecutor,
                 systemServiceName,
                 serviceName,
@@ -563,6 +612,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
@@ -622,6 +672,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
@@ -671,6 +722,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
@@ -727,6 +779,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
@@ -786,6 +839,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
@@ -837,6 +891,7 @@ describe(GrpcService.name, () => {
                     { grpcServer: streamConfig },
                     [new GrpcAction()],
                     logger,
+                    envService,
                     actionExecutor,
                     systemServiceName,
                     serviceName,
