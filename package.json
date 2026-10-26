@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "34.4.3",
+    "version": "34.4.4",
     "description": "Application package with IoC container",
     "license": "SEE LICENSE IN LICENSE.md",
     "author": "diia-team",
@@ -44,8 +44,7 @@
         "lint-fix": "oxlint --fix && oxfmt . && diia-buf-lint --fix",
         "lint:lockfile": "lockfile-lint --path package-lock.json --allowed-hosts registry.npmjs.org --validate-https",
         "test": "npm run genproto && tsc --project tests/tsconfig.json && vitest run",
-        "test:watch": "vitest watch",
-        "find-circulars": "madge --circular --extensions ts ./"
+        "test:watch": "vitest watch"
     },
     "dependencies": {
         "@grpc/grpc-js": "1.14.5",
@@ -87,7 +86,7 @@
         "@diia-inhouse/errors": "2.3.27",
         "@diia-inhouse/features": "3.2.168",
         "@diia-inhouse/healthcheck": "2.1.164",
-        "@diia-inhouse/oxc-config": "5.0.2",
+        "@diia-inhouse/oxc-config": "6.1.0",
         "@diia-inhouse/redis": "3.2.33",
         "@diia-inhouse/test": "8.3.43",
         "@diia-inhouse/types": "14.7.2",
@@ -103,7 +102,6 @@
         "@vitest/coverage-v8": "5.0.5",
         "@vitest/ui": "5.0.5",
         "lockfile-lint": "5.0.0",
-        "madge": "8.0.0",
         "oxfmt": "0.72.0",
         "oxlint": "1.87.0",
         "oxlint-tsgolint": "7.0.2003",
@@ -159,8 +157,5 @@
     },
     "engines": {
         "node": ">=24"
-    },
-    "madge": {
-        "tsConfig": "./tsconfig.json"
     }
 }
