@@ -175,7 +175,6 @@ export class ActionExecutor {
         }
 
         switch (sessionType) {
-            case SessionType.PortalUser:
             case SessionType.EResidentApplicant:
             case SessionType.EResident:
             case SessionType.User: {
