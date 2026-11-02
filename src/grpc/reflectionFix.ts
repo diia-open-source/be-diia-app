@@ -120,6 +120,35 @@ export function fixReflectionTypeNames(pkgDefs: PackageDefinition): PackageDefin
     return fixedPkgDefs
 }
 
+/** ReflectionService's `services` option filters only list_services; symbol lookups would still describe every service */
+export function keepReflectionServices(pkgDefs: PackageDefinition, services: string[]): PackageDefinition {
+    const filtered = new Map<Buffer, Buffer>()
+    const filter = (buf: Buffer): Buffer => {
+        const cached = filtered.get(buf)
+        if (cached) {
+            return cached
+        }
+
+        const fd = FileDescriptorProto.decode(buf) as unknown as FileDescriptor
+
+        fd.service = fd.service?.filter(({ name }) => services.includes(fd.package ? `${fd.package}.${name}` : name))
+        const result = Buffer.from(FileDescriptorProto.encode(fd).finish())
+
+        filtered.set(buf, result)
+
+        return result
+    }
+
+    return Object.fromEntries(
+        Object.entries(pkgDefs).map(([key, def]) => [
+            key,
+            'fileDescriptorProtos' in def && Array.isArray(def.fileDescriptorProtos)
+                ? { ...def, fileDescriptorProtos: def.fileDescriptorProtos.map(filter) }
+                : def,
+        ]),
+    ) as PackageDefinition
+}
+
 function buildPackageMap(packageName: string, packageMap: Map<string, string[]>): void {
     // Map short package suffix to all full packages that have that suffix
     // e.g., "icon" -> ["ua.gov.diia.types.ds.icon", "ua.gov.diia.types.ds.atoms.icon"]

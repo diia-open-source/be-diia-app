@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "34.5.2",
+    "version": "34.6.0",
     "description": "Application package with IoC container",
     "license": "SEE LICENSE IN LICENSE.md",
     "author": "diia-team",

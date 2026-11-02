@@ -7,10 +7,17 @@ export interface GrpcClientConfig {
     defaultDeadlineMs?: number
 }
 
+export type GrpcServiceBinding = string | GrpcServicePortBinding
+
+export interface GrpcServicePortBinding {
+    name: string
+    port: number
+}
+
 export interface GrpcServerConfig {
     isEnabled: boolean
     port: number
-    services: string[]
+    services: GrpcServiceBinding[]
     isReflectionEnabled: boolean
     maxReceiveMessageLength: number
     streamsCloseTimeoutMs?: number
