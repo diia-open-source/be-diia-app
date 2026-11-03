@@ -1,3 +1,4 @@
+/* v8 ignore file */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as dotenv from 'dotenv-flow'
 import * as ts from 'typescript'

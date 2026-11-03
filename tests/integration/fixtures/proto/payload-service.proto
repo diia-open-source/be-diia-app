@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+import "payload.proto";
+
+package ua.gov.diia.fixture;
+
+service PayloadService {
+  rpc GetPayload(GetPayloadReq) returns (GetPayloadRes) {};
+}
+
+message GetPayloadReq {}
+
+message GetPayloadRes {
+  string name = 1;
+  ua.gov.diia.fixture.payload.Payload payload = 2;
+}

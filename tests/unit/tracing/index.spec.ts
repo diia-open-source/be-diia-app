@@ -39,19 +39,28 @@ const defaultConfig = {
 }
 
 describe(`initTracing`, () => {
-    it('should not register node tracer provider if tracing is disabled', () => {
+    it('should register a provider without exporters when tracing is disabled', () => {
         initTracing()
 
-        const { instances: providerInstances } = vi.mocked(NodeTracerProvider).mock
+        const [provider] = vi.mocked(NodeTracerProvider).mock.instances
 
-        expect(providerInstances).toHaveLength(1)
+        expect(OTLPTraceExporter).not.toHaveBeenCalled()
+        expect(NodeTracerProvider).toHaveBeenCalledWith({ spanProcessors: [] })
+        expect(provider.register).toHaveBeenCalledTimes(1)
     })
 
-    it('should register node tracer provider', () => {
+    it('should export spans to the collector in batches when tracing is enabled', () => {
         initTracing({ enabled: true })
+
+        const [exporter] = vi.mocked(OTLPTraceExporter).mock.instances
+        const [batchSpanProcessor] = vi.mocked(BatchSpanProcessor).mock.instances
+        const [provider] = vi.mocked(NodeTracerProvider).mock.instances
 
         expect(registerInstrumentations).toHaveBeenCalled()
         expect(OTLPTraceExporter).toHaveBeenCalledWith(defaultConfig.exporter)
+        expect(BatchSpanProcessor).toHaveBeenCalledWith(exporter)
+        expect(NodeTracerProvider).toHaveBeenCalledWith({ spanProcessors: [batchSpanProcessor] })
+        expect(provider.register).toHaveBeenCalledTimes(1)
     })
 
     it('should add debug logging', () => {

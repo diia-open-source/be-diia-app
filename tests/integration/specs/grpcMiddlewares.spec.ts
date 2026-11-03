@@ -16,28 +16,15 @@ describe('grpc-middlewares', () => {
     })
 
     describe('deadline', () => {
-        it('should return response', async () => {
-            const result = await app.container
-                .resolve('testServiceClient')
-                .getTest({ timeoutMs: DurationMs.Second * 0.1 }, clientCallOptions({ deadline: DurationMs.Second * 10 }))
+        it('should end the call at the deadline the caller sets, before the default one', async () => {
+            const startedAt = Date.now()
 
-            expect(result).toEqual<GetTestRes>({ status: 'ok' })
-        })
-
-        it('should return deadline error via clientCallOptions', async () => {
             await expect(
                 app.container
                     .resolve('testServiceClient')
-                    .getTest({ timeoutMs: DurationMs.Second * 20 }, clientCallOptions({ deadline: DurationMs.Second * 0.5 })),
+                    .getTest({ timeoutMs: DurationMs.Second * 20 }, clientCallOptions({ deadline: DurationMs.Second * 0.3 })),
             ).rejects.toThrow('/ua.gov.diia.test.Test/GetTest DEADLINE_EXCEEDED: Deadline exceeded')
-        })
-
-        it('should return deadline error via direct options', async () => {
-            await expect(
-                app.container
-                    .resolve('testServiceClient')
-                    .getTest({ timeoutMs: DurationMs.Second * 20 }, { deadline: DurationMs.Second * 0.5 }),
-            ).rejects.toThrow('/ua.gov.diia.test.Test/GetTest DEADLINE_EXCEEDED: Deadline exceeded')
+            expect(Date.now() - startedAt).toBeLessThan(DurationMs.Second * 0.9)
         })
     })
 

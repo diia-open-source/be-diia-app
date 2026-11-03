@@ -1,6 +1,7 @@
 syntax = "proto3";
 
-// do not import google protobufs due to extension conflict in the test mode
+import "google/protobuf/timestamp.proto";
+import "schema-reflection-test.proto";
 
 package ua.gov.diia.test;
 
@@ -14,6 +15,12 @@ service Test {
   rpc LockResource(LockResourceReq) returns (GetTestRes) {};
   rpc TryLockResource(LockResourceReq) returns (GetTestRes) {};
   rpc EchoParams(EchoParamsReq) returns (EchoParamsRes) {};
+  rpc EchoContext(EchoContextReq) returns (EchoContextRes) {};
+  rpc EchoTypedParams(TypedParams) returns (TypedParams) {};
+  rpc EchoTimestamp(EchoTimestampReq) returns (EchoTimestampRes) {};
+  rpc GetVersioned(GetTestReq) returns (GetVersionedRes) {};
+  rpc SubscribeTest(SubscribeTestReq) returns (stream TestEvent) {};
+  rpc ChatTest(stream TestEvent) returns (stream TestEvent) {};
 }
 
 service TestPrivate {
@@ -64,4 +71,77 @@ message EchoDeeplyNestedMsg {
 
 message EchoParamsRes {
   string paramsJson = 1;
+}
+
+message EchoContextReq {}
+
+message EchoContextRes {
+  string headersJson = 1;
+  string sessionJson = 2;
+}
+
+message TypedParams {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_A = 1;
+    KIND_B = 2;
+  }
+
+  message Inner {
+    Kind kind = 1;
+    string value = 2;
+  }
+
+  message Pair {
+    string key = 1;
+    string value = 2;
+  }
+
+  Kind kind = 1;
+  repeated Kind kinds = 2;
+  Inner inner = 3;
+  repeated Inner inners = 4;
+  map<string, string> labels = 5;
+  map<string, Inner> innerByKey = 6;
+  int32 count = 7;
+  int64 big = 8;
+  bool flag = 9;
+  google.protobuf.Timestamp at = 10;
+  ua.gov.diia.test.schema.UserStatus userStatus = 11;
+  repeated Pair pairs = 12;
+  map<string, Kind> kindByKey = 13;
+  repeated int32 nums = 14;
+}
+
+message Envelope {
+  message Entry {
+    EchoNestedMsg item = 1;
+  }
+
+  repeated Entry entries = 1;
+}
+
+message EchoTimestampReq {
+  google.protobuf.Timestamp at = 1;
+  string shape = 2;
+}
+
+message EchoTimestampRes {
+  google.protobuf.Timestamp at = 1;
+  string receivedAs = 2;
+}
+
+message GetVersionedRes {
+  string version = 1;
+}
+
+message SubscribeTestReq {
+  string id = 1;
+  optional string mode = 2;
+}
+
+message TestEvent {
+  string id = 1;
+  string payload = 2;
+  optional string error = 3;
 }

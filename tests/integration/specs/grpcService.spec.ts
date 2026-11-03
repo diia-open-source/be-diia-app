@@ -4,20 +4,28 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { ErrorType } from '@diia-inhouse/errors'
 import { RedlockService } from '@diia-inhouse/redis'
 import TestKit from '@diia-inhouse/test'
-import { ActHeaders, ConnectionModes, GenericObject, HttpStatusCode, Logger, SessionType, grpcMetadataKeys } from '@diia-inhouse/types'
+import { ActionVersion, ConnectionModes, HttpStatusCode, Logger, SessionType, grpcMetadataKeys } from '@diia-inhouse/types'
 
-import { GrpcService, clientCallOptions } from '../../../src'
+import { CallOptions, GrpcMetadata, clientCallOptions } from '../../../src'
+import LockResourceAction from '../actions/v1/lockResource'
 import { TestClient, TestPrivateClient } from '../generated'
+import { EchoParamsReq } from '../generated/test-service'
 import { getApp } from '../getApp'
 
 describe('grpcService', () => {
     let app: Awaited<ReturnType<typeof getApp>>
 
-    let testServiceClient: TestClient
-    let testPrivateServiceClient: TestPrivateClient
+    let testServiceClient: TestClient<CallOptions>
+    let testPrivateServiceClient: TestPrivateClient<CallOptions>
     let redlock: RedlockService
 
     const testKit = new TestKit()
+
+    const echoContext = async (options?: CallOptions): Promise<{ headers: Record<string, unknown>; session: unknown }> => {
+        const { headersJson, sessionJson } = await testServiceClient.echoContext({}, options)
+
+        return { headers: JSON.parse(headersJson), session: JSON.parse(sessionJson) }
+    }
 
     beforeAll(async () => {
         app = await getApp()
@@ -88,173 +96,181 @@ describe('grpcService', () => {
                 },
             })
         })
+
+        it.each([
+            { httpStatus: HttpStatusCode.BAD_REQUEST, status: 'INVALID_ARGUMENT', code: HttpStatusCode.BAD_REQUEST },
+            { httpStatus: HttpStatusCode.UNAUTHORIZED, status: 'UNAUTHENTICATED', code: HttpStatusCode.UNAUTHORIZED },
+            { httpStatus: HttpStatusCode.FORBIDDEN, status: 'PERMISSION_DENIED', code: HttpStatusCode.FORBIDDEN },
+            { httpStatus: HttpStatusCode.TOO_MANY_REQUESTS, status: 'RESOURCE_EXHAUSTED', code: HttpStatusCode.TOO_MANY_REQUESTS },
+            { httpStatus: HttpStatusCode.SERVICE_UNAVAILABLE, status: 'UNAVAILABLE', code: HttpStatusCode.SERVICE_UNAVAILABLE },
+            { httpStatus: 418, status: 'UNKNOWN', code: HttpStatusCode.INTERNAL_SERVER_ERROR },
+        ])('should answer an ApiError $httpStatus with $status', async ({ httpStatus, status, code }) => {
+            await expect(testServiceClient.throwError({ httpStatus })).rejects.toMatchObject({
+                message: `/ua.gov.diia.test.Test/ThrowError ${status}: error message`,
+                code,
+            })
+        })
     })
 
-    it.each(Object.values(SessionType))('should handle %s session', async (sessionType: SessionType) => {
-        const session = testKit.session.getSessionBySessionType(sessionType)
+    describe('action context', () => {
+        it.each([
+            { key: grpcMetadataKeys.TRACE_ID, header: 'traceId', value: 'trace-1' },
+            { key: grpcMetadataKeys.ACCEPT_LANGUAGE, header: 'acceptLanguage', value: 'uk' },
+            { key: grpcMetadataKeys.PLATFORM_TYPE, header: 'platformType', value: 'Android' },
+            { key: grpcMetadataKeys.MOBILE_UID, header: 'mobileUid', value: 'mobile-1' },
+            { key: grpcMetadataKeys.APP_VERSION, header: 'appVersion', value: '4.0.0' },
+            { key: grpcMetadataKeys.PLATFORM_VERSION, header: 'platformVersion', value: '14' },
+            {
+                key: grpcMetadataKeys.TRACE_PARENT,
+                header: 'traceparent',
+                value: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+            },
+            { key: grpcMetadataKeys.TRACE_STATE, header: 'tracestate', value: 'congo=t61rcWkgMzE' },
+            { key: grpcMetadataKeys.CONTENT_TYPE, header: 'contentType', value: 'application/json' },
+            { key: grpcMetadataKeys.TOKEN, header: 'token', value: 'token-1' },
+            { key: grpcMetadataKeys.TICKET, header: 'ticket', value: 'ticket-1' },
+            { key: grpcMetadataKeys.CHANNEL_UUID, header: 'channelUuid', value: 'channel-1' },
+            { key: grpcMetadataKeys.CONNECTION_MODE, header: 'connectionMode', value: ConnectionModes.DirectToCell },
+        ])('should pass $key metadata to the action as the $header header', async ({ key, header, value }) => {
+            const metadata = new GrpcMetadata()
 
-        const { status } = await testServiceClient.getTest({ timeoutMs: 1 }, clientCallOptions({ session }))
+            metadata.set(key, value)
 
-        expect(status).toBe('ok')
+            const { headers } = await echoContext({ metadata })
+
+            expect(headers[header]).toBe(value)
+        })
+
+        it('should mark the action headers with the calling service', async () => {
+            const { headers } = await echoContext()
+
+            expect(headers).toMatchObject({ sentFrom: 'Auth', tracing: '{}', actionVersion: ActionVersion.V1 })
+        })
+
+        it.each(Object.values(SessionType).filter((type) => type !== SessionType.None))(
+            'should pass a %s session to the action',
+            async (sessionType) => {
+                const session = testKit.session.getSessionBySessionType(sessionType)
+
+                const result = await echoContext(clientCallOptions({ session }))
+
+                expect(result.session).toEqual(JSON.parse(JSON.stringify(session)))
+            },
+        )
+
+        it('should give the action a None session when the caller sends none', async () => {
+            const { session } = await echoContext()
+
+            expect(session).toEqual({ sessionType: SessionType.None })
+        })
     })
 
-    it('should pass the connection mode from metadata to the action headers', async () => {
-        const grpcService = app.container.resolve<GrpcService>('grpcService')
-        const originalExecuteAction = grpcService['executeAction'].bind(grpcService)
-        let capturedHeaders: ActHeaders | undefined
+    describe('action versions', () => {
+        it.each([
+            { description: 'the newest version when the caller sends none', version: undefined, expected: ActionVersion.V2 },
+            { description: 'the version the caller asks for', version: ActionVersion.V1, expected: ActionVersion.V1 },
+        ])('should answer with $description', async ({ version, expected }) => {
+            await expect(testServiceClient.getVersioned({ timeoutMs: 1 }, clientCallOptions({ version }))).resolves.toEqual({
+                version: expected,
+            })
+        })
 
-        grpcService['executeAction'] = async (action, metadata, headers, params): Promise<unknown> => {
-            capturedHeaders = headers
+        it('should reject a version no action declares', async () => {
+            await expect(
+                testServiceClient.getVersioned({ timeoutMs: 1 }, clientCallOptions({ version: ActionVersion.V3 })),
+            ).rejects.toMatchObject({
+                code: HttpStatusCode.NOT_IMPLEMENTED,
+                message: '/ua.gov.diia.test.Test/GetVersioned UNIMPLEMENTED: Configuration error: action not found for version v3',
+            })
+        })
 
-            return await originalExecuteAction(action, metadata, headers, params)
-        }
-
-        try {
-            const options = clientCallOptions({ session: testKit.session.getUserSession() })
-
-            options.metadata?.set(grpcMetadataKeys.CONNECTION_MODE, ConnectionModes.DirectToCell)
-
-            await testServiceClient.getTest({ timeoutMs: 1 }, options)
-
-            expect(capturedHeaders?.connectionMode).toBe(ConnectionModes.DirectToCell)
-        } finally {
-            grpcService['executeAction'] = originalExecuteAction
-        }
+        it('should serve an unversioned action whatever version the caller asks for', async () => {
+            await expect(testServiceClient.getTest({ timeoutMs: 1 }, clientCallOptions({ version: ActionVersion.V3 }))).resolves.toEqual({
+                status: 'ok',
+            })
+        })
     })
 
-    describe('synthetic oneof fields', () => {
-        it('should receive params with underscore fields from grpc deserialization before stripping', async () => {
-            const grpcService = app.container.resolve<GrpcService>('grpcService')
-            const originalExecuteAction = grpcService['executeAction'].bind(grpcService)
-            let capturedRawParams: GenericObject | undefined
-
-            grpcService['executeAction'] = async (action, metadata, headers, params): Promise<unknown> => {
-                capturedRawParams = structuredClone(params)
-
-                return await originalExecuteAction(action, metadata, headers, params)
-            }
-
-            expect.assertions(6)
-            try {
-                await testServiceClient.echoParams({
+    describe('params', () => {
+        it.each<{ description: string; request: EchoParamsReq; expected: object }>([
+            {
+                description: 'flat optional fields',
+                request: { name: 'John', nickname: 'johnny', items: [], plain: undefined },
+                expected: { name: 'John', nickname: 'johnny', items: [] },
+            },
+            {
+                description: 'nested optional fields',
+                request: { name: 'John', nested: { value: 'test', extra: 'data' }, items: [], plain: undefined },
+                expected: { name: 'John', nested: { value: 'test', extra: 'data' }, items: [] },
+            },
+            {
+                description: 'deeply nested optional fields',
+                request: {
                     name: 'John',
-                    nickname: 'johnny',
-                    nested: { value: 'test', extra: 'data', deep: { id: 'd1', label: 'lbl' } },
-                    items: [{ value: 'item1', extra: 'x' }],
-                })
-
-                expect(capturedRawParams).toHaveProperty('_nickname', 'nickname')
-                expect(capturedRawParams).toHaveProperty('_nested', 'nested')
-                expect(capturedRawParams!.nested).toHaveProperty('_extra', 'extra')
-                expect(capturedRawParams!.nested).toHaveProperty('_deep', 'deep')
-                expect(capturedRawParams!.nested.deep).toHaveProperty('_label', 'label')
-                expect(capturedRawParams!.items[0]).toHaveProperty('_extra', 'extra')
-            } finally {
-                grpcService['executeAction'] = originalExecuteAction
-            }
-        })
-
-        it('should strip synthetic oneof fields from flat optional params', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({
-                name: 'John',
-                nickname: 'johnny',
-            })
-            const params = JSON.parse(paramsJson)
-
-            expect(params).toHaveProperty('name', 'John')
-            expect(params).toHaveProperty('nickname', 'johnny')
-            expect(params).not.toHaveProperty('_nickname')
-            expect(params).not.toHaveProperty('_nested')
-        })
-
-        it('should strip synthetic oneof fields from nested optional params', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({
-                name: 'John',
-                nickname: 'johnny',
-                nested: { value: 'test', extra: 'data' },
-            })
-            const params = JSON.parse(paramsJson)
-
-            expect(params).not.toHaveProperty('_nickname')
-            expect(params).not.toHaveProperty('_nested')
-            expect(params.nested).toHaveProperty('value', 'test')
-            expect(params.nested).toHaveProperty('extra', 'data')
-            expect(params.nested).not.toHaveProperty('_extra')
-            expect(params.nested).not.toHaveProperty('_deep')
-        })
-
-        it('should strip synthetic oneof fields from deeply nested optional params', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({
-                name: 'John',
-                nested: {
-                    value: 'level1',
-                    extra: 'e1',
-                    deep: { id: 'deep-1', label: 'deep-label' },
+                    nested: { value: 'level1', deep: { id: 'deep-1', label: 'deep-label' } },
+                    items: [],
+                    plain: undefined,
                 },
-            })
-            const params = JSON.parse(paramsJson)
+                expected: { name: 'John', nested: { value: 'level1', deep: { id: 'deep-1', label: 'deep-label' } }, items: [] },
+            },
+            {
+                description: 'repeated nested messages',
+                request: {
+                    name: 'John',
+                    items: [{ value: 'a', extra: 'x1' }, { value: 'b', deep: { id: 'd1', label: 'l1' } }, { value: 'c' }],
+                    plain: undefined,
+                },
+                expected: {
+                    name: 'John',
+                    items: [{ value: 'a', extra: 'x1' }, { value: 'b', deep: { id: 'd1', label: 'l1' } }, { value: 'c' }],
+                },
+            },
+            {
+                description: 'an omitted message field',
+                request: { name: 'John', items: [], plain: undefined },
+                expected: { name: 'John', items: [] },
+            },
+            {
+                description: 'a present message field',
+                request: { name: 'John', plain: { value: 'v' }, items: [] },
+                expected: { name: 'John', plain: { value: 'v' }, items: [] },
+            },
+        ])('should pass $description to the action exactly as sent', async ({ request, expected }) => {
+            const { paramsJson } = await testServiceClient.echoParams(request)
 
-            expect(params).not.toHaveProperty('_nickname')
-            expect(params).not.toHaveProperty('_nested')
-            expect(params.nested).not.toHaveProperty('_extra')
-            expect(params.nested).not.toHaveProperty('_deep')
-            expect(params.nested.deep).toEqual({ id: 'deep-1', label: 'deep-label' })
-            expect(params.nested.deep).not.toHaveProperty('_label')
+            expect(JSON.parse(paramsJson)).toEqual(expected)
         })
 
-        it('should strip synthetic oneof fields from repeated nested messages', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({
-                name: 'John',
-                items: [{ value: 'a', extra: 'x1' }, { value: 'b', extra: 'x2', deep: { id: 'd1', label: 'l1' } }, { value: 'c' }],
-            })
-            const params = JSON.parse(paramsJson)
+        it.each(['date', 'seconds'])('should return a Timestamp the action gives as %s as the same instant', async (shape) => {
+            const at = new Date('2026-11-02T10:20:30.456Z')
 
-            expect(params).not.toHaveProperty('_nickname')
-            expect(params).not.toHaveProperty('_nested')
-
-            for (const item of params.items) {
-                expect(item).not.toHaveProperty('_extra')
-                expect(item).not.toHaveProperty('_deep')
-            }
-
-            expect(params.items[0]).toEqual({ value: 'a', extra: 'x1' })
-            expect(params.items[1].deep).toEqual({ id: 'd1', label: 'l1' })
-            expect(params.items[1].deep).not.toHaveProperty('_label')
-        })
-
-        it('should strip synthetic oneof fields when optional fields are not set', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({ name: 'John' })
-            const params = JSON.parse(paramsJson)
-
-            expect(params).toEqual({ name: 'John', items: [] })
-            expect(params).not.toHaveProperty('_nickname')
-            expect(params).not.toHaveProperty('_nested')
+            await expect(testServiceClient.echoTimestamp({ at, shape })).resolves.toEqual({ at, receivedAs: 'Date' })
         })
     })
 
-    describe('absent message fields', () => {
-        it('should not pass an omitted message field to the action as null', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({ name: 'John' })
-            const params = JSON.parse(paramsJson)
+    it('should lock the resource while the action runs and release it after', async () => {
+        const resource = `lockResource.${randomUUID()}`
+        const action = app.container.resolve<LockResourceAction>('v1LockResourceAction')
+        let isLockedWhileRunning: boolean | undefined
 
-            expect(params).not.toHaveProperty('plain')
+        vi.spyOn(action, 'handler').mockImplementationOnce(async () => {
+            isLockedWhileRunning = await redlock.lock(resource, 1000, { acquireTimeout: 100 }).then(
+                async (lock) => {
+                    await lock.release()
+
+                    return false
+                },
+                () => true,
+            )
+
+            return { status: 'ok' }
         })
 
-        it('should pass a present message field to the action', async () => {
-            const { paramsJson } = await testServiceClient.echoParams({ name: 'John', plain: { value: 'v' } })
-            const params = JSON.parse(paramsJson)
+        await expect(testServiceClient.lockResource({ id: resource.split('.')[1] })).resolves.toEqual({ status: 'ok' })
+        const lock = await redlock.lock(resource, 1000, { acquireTimeout: 100 })
 
-            expect(params.plain).toEqual({ value: 'v' })
-        })
-    })
-
-    it('should lock resource', async () => {
-        const redlockSpy = vi.spyOn(redlock, 'lock')
-
-        const { status } = await testServiceClient.lockResource({ id: '123' })
-
-        expect(status).toBe('ok')
-        expect(redlockSpy).toHaveBeenCalledWith('lockResource.123', 30000)
+        expect(isLockedWhileRunning).toBe(true)
+        await lock.release()
     })
 
     describe('action with tryLockTimeout', () => {

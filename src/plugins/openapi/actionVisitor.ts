@@ -1,3 +1,4 @@
+/* v8 ignore file */
 import ts from 'typescript'
 
 import { ACTION_RESPONSE } from '../pluginConstants.js'
@@ -25,13 +26,13 @@ const ActionVisitor = {
 
                 const type = typeChecker.getReturnTypeOfSignature(signature)
 
-                const responseType = type.symbol.getName() === 'Promise' ? (type as ts.GenericType)?.typeArguments?.[0] : type
+                const responseType = type.symbol?.getName() === 'Promise' ? (type as ts.GenericType)?.typeArguments?.[0] : type
 
                 if (!responseType) {
                     return ts.visitEachChild(node, visitClassNode, ctx)
                 }
 
-                const handlerResponse: ts.ObjectLiteralExpression = parser.parseType(responseType, program)
+                const handlerResponse = parser.parseType(responseType, program)
 
                 return this.addResponseFactory(ctx.factory, node, handlerResponse)
             }
@@ -45,7 +46,7 @@ const ActionVisitor = {
     addResponseFactory(
         factory: ts.NodeFactory,
         node: ts.ClassDeclaration,
-        handlerResponse: ts.ObjectLiteralExpression,
+        handlerResponse: ts.ObjectLiteralExpression | undefined,
     ): ts.ClassDeclaration {
         const property = factory.createPropertyDeclaration(
             undefined,

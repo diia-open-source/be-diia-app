@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package ua.gov.diia.fixture.maps;
+
+service MapService {
+  rpc Echo(Maps) returns (Maps) {};
+}
+
+message Maps {
+  message Pair {
+    string key = 1;
+    string value = 2;
+  }
+
+  map<string, string> labels = 1;
+  repeated Pair pairs = 2;
+}

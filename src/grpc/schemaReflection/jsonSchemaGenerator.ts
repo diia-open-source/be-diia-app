@@ -86,9 +86,7 @@ export class JsonSchemaGenerator {
         for (const field of type.fieldsArray) {
             properties[field.name] = this.fieldToSchema(field, visited, definitions, definitionNames, type.name)
 
-            const isExplicitlyOptional = field.partOf?.name?.startsWith('_')
-            const isArray = field.repeated
-            if (!isExplicitlyOptional && !isArray) {
+            if (this.isRequired(field)) {
                 required.push(field.name)
             }
         }
@@ -277,9 +275,7 @@ export class JsonSchemaGenerator {
         for (const nestedField of nestedType.fieldsArray) {
             nestedProperties[nestedField.name] = this.fieldToSchema(nestedField, newVisited, definitions, definitionNames, nestedType.name)
 
-            const isExplicitlyOptional = nestedField.partOf?.name?.startsWith('_')
-            const isArray = nestedField.repeated
-            if (!isExplicitlyOptional && !isArray) {
+            if (this.isRequired(nestedField)) {
                 nestedRequired.push(nestedField.name)
             }
         }
@@ -501,16 +497,11 @@ export class JsonSchemaGenerator {
         return lines.join('\n')
     }
 
+    private isRequired(field: protobuf.Field): boolean {
+        return !field.partOf && !field.repeated
+    }
+
     private getFieldComment(fieldName: string, parentTypeName: string): string | undefined {
-        const lookupKey = `${parentTypeName}.${fieldName}`
-        let comment = this.fieldComments.get(lookupKey)
-
-        if (!comment && parentTypeName.includes('.')) {
-            const shortTypeName = parentTypeName.split('.').pop() || ''
-
-            comment = this.fieldComments.get(`${shortTypeName}.${fieldName}`)
-        }
-
-        return comment
+        return this.fieldComments.get(`${parentTypeName}.${fieldName}`)
     }
 }

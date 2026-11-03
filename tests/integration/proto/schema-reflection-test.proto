@@ -37,7 +37,9 @@ service AdminService {
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {};
 
   // Ban a user
-  rpc BanUser(BanUserRequest) returns (BanUserResponse) {};
+  rpc BanUser(BanUserRequest) returns (BanUserResponse) {
+    option deprecated = true;
+  };
 }
 
 // Request to get user by ID
@@ -240,7 +242,7 @@ message NotificationRequest {
 
   // Target (oneof)
   oneof target {
-    string user_id = 2;
+    string user_id = 2; // Recipient user ID
     string group_id = 3;
     bool broadcast = 4;
   }

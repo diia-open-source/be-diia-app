@@ -1,15 +1,17 @@
+import { IdentifierService } from '@diia-inhouse/crypto'
+import { HealthCheck } from '@diia-inhouse/healthcheck'
+
 import { getApp } from '../getApp'
 
 describe('Application', () => {
-    it('should start', async () => {
+    it('should register the health check and, when configured, the identifier service', async () => {
         const app = await getApp()
 
-        const services = ['healthCheck', 'identifier']
-
-        for (const service of services) {
-            expect(app.container.resolve(service)).toBeDefined()
+        try {
+            expect(app.container.resolve('healthCheck')).toBeInstanceOf(HealthCheck)
+            expect(app.container.resolve('identifier')).toBeInstanceOf(IdentifierService)
+        } finally {
+            await app.stop()
         }
-
-        await app.stop()
     })
 })

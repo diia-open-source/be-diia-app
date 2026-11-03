@@ -22,7 +22,7 @@ export const configFactory = async (_: EnvService, serviceName: string) =>
         } as BalancingStrategy,
 
         healthCheck: {
-            isEnabled: EnvService.getVar('METRICS_MOLECULER_PROMETHEUS_IS_ENABLED', 'boolean', false),
+            isEnabled: EnvService.getVar('HEALTH_CHECK_IS_ENABLED', 'boolean', false),
             port: EnvService.getVar('HEALTH_CHECK_IS_PORT', 'number', 3000),
         },
 

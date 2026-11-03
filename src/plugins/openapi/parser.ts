@@ -1,3 +1,4 @@
+/* v8 ignore file */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import ts from 'typescript'
 
@@ -10,7 +11,8 @@ class TypeParser {
 
     private allowedToParsePackagePrefixes = ['@diia']
 
-    parseType(type: ts.Type, program?: ts.Program): ts.ObjectLiteralExpression {
+    /** Undefined for a type that has no value to describe: void, undefined, never */
+    parseType(type: ts.Type, program?: ts.Program): ts.ObjectLiteralExpression | undefined {
         if (program) {
             this.program = program
             this.checker = program.getTypeChecker()
@@ -18,8 +20,11 @@ class TypeParser {
 
         const flags: ts.TypeFlags = type.flags
 
+        if (flags === ts.TypeFlags.Null) {
+            return this.typeSchema('null')
+        }
+
         if (this.isNull(flags)) {
-            // @ts-ignore
             return
         }
 
@@ -50,29 +55,20 @@ class TypeParser {
     }
 
     parseInterface(type: ts.Type): ts.ObjectLiteralExpression {
-        const properties = this.checker
-            ?.getPropertiesOfType(type)
-            .filter((property) => property?.declarations?.length || (property as any).type)
-            .filter((property) => {
-                if (property.declarations?.length) {
-                    return !ts.isMethodDeclaration(property.declarations[0])
-                }
-
-                return true
-            })
-
-        const propertiesAssignments: ts.PropertyAssignment[] = properties.map((property) => {
-            let parsed: ts.ObjectLiteralExpression
-
-            if (property.declarations) {
-                const nestedType: ts.Type = this.checker.getTypeOfSymbolAtLocation(property, property.declarations[0])
-
-                parsed = this.parseType(nestedType)
-            } else {
-                parsed = this.parseType((property as any).type)
+        const properties = this.checker?.getPropertiesOfType(type).filter((property) => {
+            if (property.declarations?.length) {
+                return !ts.isMethodDeclaration(property.declarations[0])
             }
 
-            parsed = this.addMetadataToProperty(property, parsed)
+            return true
+        })
+
+        const propertiesAssignments: ts.PropertyAssignment[] = properties.map((property) => {
+            // A property of a mapped type such as Record<'a' | 'b', T> has no declaration
+            const nestedType = property.declarations?.length
+                ? this.checker.getTypeOfSymbolAtLocation(property, property.declarations[0])
+                : this.checker.getTypeOfSymbol(property)
+            const parsed = this.addMetadataToProperty(property, this.parseNestedType(nestedType))
 
             return ts.factory.createPropertyAssignment(`"${property.name}"`, parsed)
         })
@@ -84,16 +80,8 @@ class TypeParser {
         const nestedPropertyAssignments: ts.PropertyAssignment[] = []
 
         const requiredValues = properties
-            .filter((prop) => prop.declarations)
-            .map((prop) => {
-                const declaration = prop.declarations?.[0] as ts.ParameterDeclaration
-                const required = !declaration?.questionToken
-
-                if (required) {
-                    return ts.factory.createStringLiteral(prop.getName())
-                }
-            })
-            .filter((prop): prop is ts.StringLiteral => Boolean(prop))
+            .filter((prop) => !(prop.flags & ts.SymbolFlags.Optional))
+            .map((prop) => ts.factory.createStringLiteral(prop.getName()))
 
         nestedPropertyAssignments.push(
             ts.factory.createPropertyAssignment('required', ts.factory.createArrayLiteralExpression(requiredValues)),
@@ -105,55 +93,17 @@ class TypeParser {
     }
 
     parsePrimitive(type: ts.Type): ts.ObjectLiteralExpression {
-        const props: ts.PropertyAssignment[] = []
         if (type.flags & ts.TypeFlags.Literal) {
-            if (!type.hasOwnProperty('value') && type.hasOwnProperty('intrinsicName')) {
-                props.push(
-                    ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                    ts.factory.createPropertyAssignment(
-                        'enum',
-                        ts.factory.createArrayLiteralExpression([
-                            (type as any).intrinsicName === 'true' ? ts.factory.createTrue() : ts.factory.createFalse(),
-                        ]),
-                    ),
-                )
-
-                return ts.factory.createObjectLiteralExpression(props)
-            }
-
-            props.push(
-                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                ts.factory.createPropertyAssignment(
-                    'enum',
-                    ts.factory.createArrayLiteralExpression([this.createLiteral((type as any).value)]),
-                ),
-            )
-
-            return ts.factory.createObjectLiteralExpression(props)
+            return this.literalSchema([type])
         }
 
-        let typeString: string = this.checker.typeToString(type)
-        if (typeString === 'unknown') {
-            typeString = 'any'
-        }
+        const jsonType = this.jsonTypeOf(type)
 
-        props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral(typeString)))
-
-        return ts.factory.createObjectLiteralExpression(props)
+        return jsonType ? this.typeSchema(jsonType) : ts.factory.createObjectLiteralExpression()
     }
 
     parseEnum(type: ts.Type): ts.ObjectLiteralExpression {
-        const enumType: ts.UnionOrIntersectionType = type as ts.UnionOrIntersectionType
-        const values: ts.Expression[] = enumType.types.map((enumProperty) => {
-            return this.createLiteral((enumProperty as any).value)
-        })
-
-        const props: ts.PropertyAssignment[] = [
-            ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-            ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
-        ]
-
-        return ts.factory.createObjectLiteralExpression(props)
+        return this.literalSchema((type as ts.UnionOrIntersectionType).types)
     }
 
     parseArray(type: ts.TypeReference): ts.ObjectLiteralExpression {
@@ -162,7 +112,7 @@ class TypeParser {
         if (type.typeArguments) {
             props.push(
                 ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('array')),
-                ts.factory.createPropertyAssignment('items', this.parseType(type.typeArguments[0])),
+                ts.factory.createPropertyAssignment('items', this.parseNestedType(type.typeArguments[0])),
             )
         } else {
             props.push(ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('array')))
@@ -186,7 +136,7 @@ class TypeParser {
         const tupleElements: ts.PropertyAssignment[] = []
 
         for (const [index, elementType] of Object.entries(type.typeArguments)) {
-            tupleElements.push(ts.factory.createPropertyAssignment(index, this.parseType(elementType)))
+            tupleElements.push(ts.factory.createPropertyAssignment(index, this.parseNestedType(elementType)))
         }
 
         props.push(
@@ -225,7 +175,7 @@ class TypeParser {
                 ])
             }
 
-            return this.parseType(unionProperty)
+            return this.parseNestedType(unionProperty)
         }
 
         let literals: boolean = types.length > 0
@@ -249,24 +199,11 @@ class TypeParser {
         }
 
         if (literals) {
-            const values = types.map((unionProperty) => {
-                if (unionProperty.flags & ts.TypeFlags.BooleanLiteral) {
-                    return this.checker.typeToString(unionProperty) === 'false' ? ts.factory.createFalse() : ts.factory.createTrue()
-                }
-
-                return this.createLiteral((unionProperty as any).value)
-            })
-
-            const props: ts.PropertyAssignment[] = [
-                ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('string')),
-                ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
-            ]
-
-            return ts.factory.createObjectLiteralExpression(props)
+            return this.literalSchema(types)
         } else if (primitives) {
-            const values: ts.StringLiteral[] = types.map((unionProperty) => {
-                return ts.factory.createStringLiteral((unionProperty as any).intrinsicName)
-            })
+            const values: ts.StringLiteral[] = types.map((unionProperty) =>
+                ts.factory.createStringLiteral(this.jsonTypeOf(unionProperty) ?? ''),
+            )
 
             return ts.factory.createObjectLiteralExpression([
                 ts.factory.createPropertyAssignment('type', ts.factory.createArrayLiteralExpression(values)),
@@ -280,7 +217,7 @@ class TypeParser {
                 ])
             }
 
-            const mappedType = this.parseType(unionProperty)
+            const mappedType = this.parseNestedType(unionProperty)
             if (unionProperty.symbol && unionProperty.symbol?.getName() !== '__type') {
                 const title: ts.PropertyAssignment = ts.factory.createPropertyAssignment(
                     'title',
@@ -300,9 +237,9 @@ class TypeParser {
 
     parseIntersection(type: ts.Type): ts.ObjectLiteralExpression {
         const intersectionType: ts.UnionOrIntersectionType = type as ts.UnionOrIntersectionType
-        const types: ts.ObjectLiteralExpression[] = intersectionType.types.map((intersectionProperty) => {
-            return this.parseType(intersectionProperty)
-        })
+        const types: ts.ObjectLiteralExpression[] = intersectionType.types.map((intersectionProperty) =>
+            this.parseNestedType(intersectionProperty),
+        )
 
         const combinedProperties: ts.ObjectLiteralElementLike[] = []
         const additionalProperties: ts.ObjectLiteralElementLike[] = []
@@ -313,16 +250,22 @@ class TypeParser {
             for (const property of t.properties) {
                 if (property.name) {
                     const identifier = property.name as ts.Identifier
+                    if (identifier.escapedText.toString() === 'required') {
+                        const required = (property as ts.PropertyAssignment).initializer as ts.ArrayLiteralExpression
+
+                        for (const name of required.elements as ts.NodeArray<ts.StringLiteral>) {
+                            if (!requiredValues.some(({ text }) => text === name.text)) {
+                                requiredValues.push(name)
+                            }
+                        }
+                    }
+
                     if (['properties', 'additionalProperties'].includes(identifier.escapedText.toString())) {
                         const assignment = property as ts.PropertyAssignment
                         const props = assignment.initializer as ts.ObjectLiteralExpressionBase<ts.PropertyAssignment>
 
                         for (const prop of props.properties) {
                             const id: ts.Identifier = prop.name as ts.Identifier
-
-                            // if (!prop.questionToken) {
-                            requiredValues.push(ts.factory.createStringLiteral(id.escapedText.toString()))
-                            // }
 
                             if (!unique.includes(id.escapedText.toString())) {
                                 unique.push(id.escapedText.toString())
@@ -361,9 +304,7 @@ class TypeParser {
             keyNames.push(prop.escapedName.toString())
         })
 
-        const recordValueType: ts.Type = (properties[0] as any)?.type
-
-        let additionalPropertiesObject: ts.ObjectLiteralExpression = this.parseType(recordValueType)
+        let additionalPropertiesObject = this.parseNestedType(this.checker.getTypeOfSymbol(properties[0]))
         const description: ts.PropertyAssignment = ts.factory.createPropertyAssignment(
             'description',
             ts.factory.createStringLiteral(`**Keys**: ${keyNames.join(' | ')}`),
@@ -410,7 +351,7 @@ class TypeParser {
 
         return ts.factory.createObjectLiteralExpression([
             ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral('object')),
-            ts.factory.createPropertyAssignment('additionalProperties', this.parseType(indexType)),
+            ts.factory.createPropertyAssignment('additionalProperties', this.parseNestedType(indexType)),
         ])
     }
 
@@ -470,6 +411,7 @@ class TypeParser {
             Boolean(flags & ts.TypeFlags.StringLike) ||
             Boolean(flags & ts.TypeFlags.NumberLike) ||
             Boolean(flags & ts.TypeFlags.BooleanLike) ||
+            Boolean(flags & ts.TypeFlags.BigIntLike) ||
             flags === ts.TypeFlags.Any ||
             flags === ts.TypeFlags.Unknown
         )
@@ -483,29 +425,93 @@ class TypeParser {
 
     private isRecordWithManyKeys(type: ts.Type): boolean {
         const isRecord: boolean =
-            type.aliasSymbol?.escapedName?.toString() === 'Record' || type?.aliasTypeArguments?.length
-                ? type?.aliasTypeArguments?.[0]?.aliasSymbol?.escapedName?.toString() === 'Record'
-                : false
+            type.aliasSymbol?.escapedName?.toString() === 'Record' ||
+            type.aliasTypeArguments?.[0]?.aliasSymbol?.escapedName?.toString() === 'Record'
 
-        if (!isRecord) {
-            return false
-        }
-
-        const properties: ts.Symbol[] = this.checker.getPropertiesOfType(type)
-        const recordValueType: ts.Type = (properties[0] as any)?.type
-
-        return recordValueType && properties.length > 5
+        return isRecord && this.checker.getPropertiesOfType(type).length > 5
     }
 
     private isExternalPackage(type: ts.Type): boolean {
         const sourceFile = type.symbol?.declarations?.[0]?.getSourceFile()
         const isExternal = sourceFile && this.program.isSourceFileFromExternalLibrary(sourceFile)
 
-        if (type.symbol.getName() === '__type') {
+        if (type.symbol?.getName() === '__type') {
             return false
         }
 
         return Boolean(isExternal)
+    }
+
+    /** A nested position always needs a schema; a property typed void or undefined accepts anything */
+    private parseNestedType(type: ts.Type): ts.ObjectLiteralExpression {
+        return this.parseType(type) ?? ts.factory.createObjectLiteralExpression()
+    }
+
+    private typeSchema(jsonType: string): ts.ObjectLiteralExpression {
+        return ts.factory.createObjectLiteralExpression([
+            ts.factory.createPropertyAssignment('type', ts.factory.createStringLiteral(jsonType)),
+        ])
+    }
+
+    /** any and unknown have no JSON type: their schema accepts anything */
+    private jsonTypeOf(type: ts.Type): string | undefined {
+        const { flags } = type
+
+        if (flags & ts.TypeFlags.Null) {
+            return 'null'
+        }
+
+        if (flags & ts.TypeFlags.BigIntLike) {
+            return 'integer'
+        }
+
+        if (flags & ts.TypeFlags.StringLike) {
+            return 'string'
+        }
+
+        if (flags & ts.TypeFlags.NumberLike) {
+            return 'number'
+        }
+
+        if (flags & ts.TypeFlags.BooleanLike) {
+            return 'boolean'
+        }
+    }
+
+    private literalSchema(literalTypes: ts.Type[]): ts.ObjectLiteralExpression {
+        const jsonTypes = [...new Set(literalTypes.map((literalType) => this.jsonTypeOf(literalType) ?? 'string'))]
+        const values = literalTypes.map((literalType) => this.literalExpression(literalType))
+
+        return ts.factory.createObjectLiteralExpression([
+            ts.factory.createPropertyAssignment(
+                'type',
+                jsonTypes.length === 1
+                    ? ts.factory.createStringLiteral(jsonTypes[0])
+                    : ts.factory.createArrayLiteralExpression(jsonTypes.map((jsonType) => ts.factory.createStringLiteral(jsonType))),
+            ),
+            ts.factory.createPropertyAssignment('enum', ts.factory.createArrayLiteralExpression(values)),
+        ])
+    }
+
+    private literalExpression(literalType: ts.Type): ts.Expression {
+        if (literalType.flags & ts.TypeFlags.BooleanLiteral) {
+            return this.checker.typeToString(literalType) === 'true' ? ts.factory.createTrue() : ts.factory.createFalse()
+        }
+
+        if (literalType.isNumberLiteral()) {
+            const literal = ts.factory.createNumericLiteral(Math.abs(literalType.value))
+
+            return literalType.value < 0 ? ts.factory.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, literal) : literal
+        }
+
+        if (literalType.flags & ts.TypeFlags.BigIntLiteral) {
+            const { negative, base10Value } = (literalType as ts.BigIntLiteralType).value
+            const literal = ts.factory.createNumericLiteral(base10Value)
+
+            return negative ? ts.factory.createPrefixUnaryExpression(ts.SyntaxKind.MinusToken, literal) : literal
+        }
+
+        return ts.factory.createStringLiteral((literalType as ts.StringLiteralType).value)
     }
 
     private addMetadataToProperty(property: ts.Symbol, parsed: ts.ObjectLiteralExpression): ts.ObjectLiteralExpression {

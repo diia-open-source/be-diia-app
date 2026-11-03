@@ -15,13 +15,13 @@ interface MessageDescriptor {
     name: string
     field?: FieldDescriptor[]
     nestedType?: MessageDescriptor[]
+    enumType?: { name?: string }[]
     options?: { mapEntry?: boolean }
 }
 
 interface ExtensionDescriptor {
     [key: string]: unknown
     name: string
-    extendee?: string
     typeName?: string
 }
 
@@ -55,45 +55,42 @@ interface FileDescriptor {
  * @see https://github.com/grpc/grpc-node/issues/2958
  */
 export function fixReflectionTypeNames(pkgDefs: PackageDefinition): PackageDefinition {
-    if (!pkgDefs) {
-        return pkgDefs
-    }
-
     // Decode all buffers once and store them
     const decodedDescriptors = new Map<Buffer, FileDescriptor>()
-    // Map package suffix to all full package names with that suffix
-    const packageMap = new Map<string, string[]>()
-    // Map simple type name to all FQNs with that name
-    const typeMap = new Map<string, string[]>()
 
-    // Collect unique buffers and decode each one once
     for (const def of Object.values(pkgDefs)) {
         if (def && 'fileDescriptorProtos' in def && Array.isArray(def.fileDescriptorProtos)) {
             for (const buf of def.fileDescriptorProtos) {
                 if (buf instanceof Buffer && !decodedDescriptors.has(buf)) {
-                    const fd = FileDescriptorProto.decode(buf) as unknown as FileDescriptor
-
-                    decodedDescriptors.set(buf, fd)
-
-                    if (fd.package) {
-                        buildPackageMap(fd.package, packageMap)
-                        collectTypes(fd, typeMap)
-                    }
+                    decodedDescriptors.set(buf, FileDescriptorProto.decode(buf) as unknown as FileDescriptor)
                 }
             }
         }
     }
 
-    // Apply fixes to decoded descriptors
+    const modified = new Set<FileDescriptor>()
+
+    for (const fd of decodedDescriptors.values()) {
+        forEachMessage(fd.messageType, fd.package, (mt) => {
+            if (fixMapEntryNames(mt)) {
+                modified.add(fd)
+            }
+        })
+    }
+
+    const typeNames = collectTypeNames(decodedDescriptors.values())
+
+    for (const fd of decodedDescriptors.values()) {
+        if (qualifyTypeNames(fd, typeNames)) {
+            modified.add(fd)
+        }
+    }
+
     const fixedBuffers = new Map<Buffer, Buffer>()
 
     for (const [buf, fd] of decodedDescriptors) {
-        const modified = applyFixes(fd, packageMap, typeMap)
-
-        if (modified) {
-            const encoded = FileDescriptorProto.encode(fd).finish()
-
-            fixedBuffers.set(buf, Buffer.from(encoded))
+        if (modified.has(fd)) {
+            fixedBuffers.set(buf, Buffer.from(FileDescriptorProto.encode(fd).finish()))
         }
     }
 
@@ -149,127 +146,95 @@ export function keepReflectionServices(pkgDefs: PackageDefinition, services: str
     ) as PackageDefinition
 }
 
-function buildPackageMap(packageName: string, packageMap: Map<string, string[]>): void {
-    // Map short package suffix to all full packages that have that suffix
-    // e.g., "icon" -> ["ua.gov.diia.types.ds.icon", "ua.gov.diia.types.ds.atoms.icon"]
-    const parts = packageName.split('.')
-    for (let i = 1; i < parts.length; i++) {
-        const suffix = parts.slice(i).join('.')
-        const existing = packageMap.get(suffix)
-        if (existing) {
-            if (!existing.includes(packageName)) {
-                existing.push(packageName)
+function joinName(scope: string, name: string): string {
+    return scope ? `${scope}.${name}` : name
+}
+
+function parentScope(fullName: string): string {
+    return fullName.slice(0, Math.max(0, fullName.lastIndexOf('.')))
+}
+
+function forEachMessage(
+    messages: MessageDescriptor[] | undefined,
+    scope: string,
+    visit: (message: MessageDescriptor, fullName: string) => void,
+): void {
+    for (const message of messages ?? []) {
+        const fullName = joinName(scope, message.name)
+
+        visit(message, fullName)
+        forEachMessage(message.nestedType, fullName, visit)
+    }
+}
+
+function collectTypeNames(files: Iterable<FileDescriptor>): Set<string> {
+    const typeNames = new Set<string>()
+
+    for (const fd of files) {
+        for (const { name = '' } of fd.enumType ?? []) {
+            typeNames.add(joinName(fd.package, name))
+        }
+
+        forEachMessage(fd.messageType, fd.package, (mt, fullName) => {
+            typeNames.add(fullName)
+            for (const { name = '' } of mt.enumType ?? []) {
+                typeNames.add(joinName(fullName, name))
             }
-        } else {
-            packageMap.set(suffix, [packageName])
-        }
+        })
     }
+
+    return typeNames
 }
 
-function collectTypes(fd: FileDescriptor, typeMap: Map<string, string[]>): void {
-    const packagePrefix = `.${fd.package}.`
-
-    // Collect message types recursively
-    if (fd.messageType) {
-        for (const msg of fd.messageType) {
-            collectMessageTypes(msg, packagePrefix, typeMap)
-        }
-    }
-
-    // Collect enum types
-    if (fd.enumType) {
-        for (const e of fd.enumType) {
-            if (e.name) {
-                addToTypeMap(typeMap, e.name, packagePrefix + e.name)
-            }
-        }
-    }
-}
-
-function collectMessageTypes(msg: MessageDescriptor, prefix: string, typeMap: Map<string, string[]>): void {
-    if (msg.name) {
-        addToTypeMap(typeMap, msg.name, prefix + msg.name)
-    }
-
-    // Recursively collect nested types
-    if (msg.nestedType) {
-        const nestedPrefix = `${prefix + msg.name}.`
-        for (const nested of msg.nestedType) {
-            collectMessageTypes(nested, nestedPrefix, typeMap)
-        }
-    }
-}
-
-function addToTypeMap(typeMap: Map<string, string[]>, simpleName: string, fqn: string): void {
-    const existing = typeMap.get(simpleName)
-    if (existing) {
-        if (!existing.includes(fqn)) {
-            existing.push(fqn)
-        }
-    } else {
-        typeMap.set(simpleName, [fqn])
-    }
-}
-
-function applyFixes(fd: FileDescriptor, packageMap: Map<string, string[]>, typeMap: Map<string, string[]>): boolean {
+function qualifyTypeNames(fd: FileDescriptor, typeNames: Set<string>): boolean {
     let modified = false
+    const qualify = (ref: { typeName?: string }, scope: string): void => {
+        if (!ref.typeName || ref.typeName.startsWith('.')) {
+            return
+        }
 
-    // Fix message type names
-    if (fd.messageType) {
-        for (const mt of fd.messageType) {
-            if (fixMessageTypeNames(mt, packageMap, typeMap)) {
-                modified = true
-            }
+        const resolved = resolveTypeName(ref.typeName, scope, typeNames)
+        if (resolved) {
+            ref.typeName = resolved
+            modified = true
         }
     }
 
-    // Fix service method input/output types
-    if (fd.service) {
-        for (const svc of fd.service) {
-            if (svc.method) {
-                for (const method of svc.method) {
-                    if (method.inputType && !method.inputType.startsWith('.')) {
-                        const fixed = fullyQualifyTypeName(method.inputType, packageMap, typeMap)
-                        if (fixed !== method.inputType) {
-                            method.inputType = fixed
-                            modified = true
-                        }
-                    }
+    forEachMessage(fd.messageType, fd.package, (mt, fullName) => {
+        // protobufjs names a map value relative to the parent of the message that declares the map
+        const scope = mt.options?.mapEntry ? parentScope(parentScope(fullName)) : fullName
 
-                    if (method.outputType && !method.outputType.startsWith('.')) {
-                        const fixed = fullyQualifyTypeName(method.outputType, packageMap, typeMap)
-                        if (fixed !== method.outputType) {
-                            method.outputType = fixed
-                            modified = true
-                        }
-                    }
-                }
+        for (const field of mt.field ?? []) {
+            // A map keeps the bare name of its entry: gateways on earlier diia-app releases find the entry only by that name
+            if (!mt.nestedType?.some(({ name, options }) => options?.mapEntry && name === field.typeName)) {
+                qualify(field, scope)
             }
         }
-    }
+    })
 
-    // Fix extensions (extendee and typeName)
-    if (fd.extension) {
-        for (const ext of fd.extension) {
-            if (ext.extendee && !ext.extendee.startsWith('.')) {
-                const fixed = fullyQualifyTypeName(ext.extendee, packageMap, typeMap)
-                if (fixed !== ext.extendee) {
-                    ext.extendee = fixed
-                    modified = true
-                }
-            }
-
-            if (ext.typeName && !ext.typeName.startsWith('.')) {
-                const fixed = fullyQualifyTypeName(ext.typeName, packageMap, typeMap)
-                if (fixed !== ext.typeName) {
-                    ext.typeName = fixed
-                    modified = true
-                }
-            }
-        }
+    // Fix extension types
+    for (const ext of fd.extension ?? []) {
+        qualify(ext, fd.package)
     }
 
     return modified
+}
+
+/**
+ * The innermost enclosing scope that defines the whole name wins. That is protoc's answer whenever protoc accepts
+ * the name, and protobufjs's when a closer scope defines only its first part, e.g. `icon.Icon` inside `ds.atoms`.
+ */
+function resolveTypeName(typeName: string, scope: string, typeNames: Set<string>): string | undefined {
+    const scopeParts = scope ? scope.split('.') : []
+
+    for (let depth = scopeParts.length; depth >= 0; depth--) {
+        const candidate = joinName(scopeParts.slice(0, depth).join('.'), typeName)
+        if (typeNames.has(candidate)) {
+            return `.${candidate}`
+        }
+    }
+
+    return undefined
 }
 
 /** protobufjs emits `ucFirst(fieldName)`; protobuf requires `<CamelCasedFieldName>Entry`. */
@@ -305,84 +270,4 @@ function fixMapEntryNames(mt: MessageDescriptor): boolean {
     }
 
     return modified
-}
-
-function fixMessageTypeNames(mt: MessageDescriptor, packageMap: Map<string, string[]>, typeMap: Map<string, string[]>): boolean {
-    let modified = fixMapEntryNames(mt)
-
-    if (mt.field) {
-        for (const field of mt.field) {
-            if (field.typeName && !field.typeName.startsWith('.')) {
-                const fixed = fullyQualifyTypeName(field.typeName, packageMap, typeMap)
-                if (fixed !== field.typeName) {
-                    field.typeName = fixed
-                    modified = true
-                }
-            }
-        }
-    }
-
-    if (mt.nestedType) {
-        for (const nested of mt.nestedType) {
-            if (fixMessageTypeNames(nested, packageMap, typeMap)) {
-                modified = true
-            }
-        }
-    }
-
-    return modified
-}
-
-function fullyQualifyTypeName(typeName: string, packageMap: Map<string, string[]>, typeMap: Map<string, string[]>): string {
-    if (typeName.startsWith('.')) {
-        return typeName
-    }
-
-    const parts = typeName.split('.')
-
-    // Simple name without dots (like "PaddingMode") - look up in type map
-    if (parts.length === 1) {
-        const fqns = typeMap.get(typeName)
-        if (fqns && fqns.length === 1) {
-            // Only use typeMap if there's exactly one FQN (unambiguous)
-            return fqns[0]
-        }
-
-        // For ambiguous simple names, leave as-is (proto-loader will resolve based on context)
-        return typeName
-    }
-
-    const messageName = parts.at(-1)
-
-    // Try to find matching package from longest to shortest suffix
-    for (let i = 0; i < parts.length - 1; i++) {
-        const pkgSuffix = parts.slice(i, -1).join('.')
-        const fullPkgs = packageMap.get(pkgSuffix)
-        if (fullPkgs) {
-            // Try each package and verify the type exists
-            for (const fullPkg of fullPkgs) {
-                const candidate = `.${fullPkg}.${messageName}`
-                if (isKnownType(candidate, typeMap)) {
-                    return candidate
-                }
-            }
-
-            // If no verified match, use the first package (fallback behavior)
-            return `.${fullPkgs[0]}.${messageName}`
-        }
-    }
-
-    // If no match found, just add leading dot
-    return `.${typeName}`
-}
-
-function isKnownType(fqn: string, typeMap: Map<string, string[]>): boolean {
-    // Check if this FQN exists in any of the typeMap value arrays
-    for (const fqns of typeMap.values()) {
-        if (fqns.includes(fqn)) {
-            return true
-        }
-    }
-
-    return false
 }

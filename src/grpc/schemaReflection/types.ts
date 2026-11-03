@@ -54,8 +54,6 @@ export interface MethodMetadata {
     serviceName: string
     methodName: string
     fullPath: string
-    httpMethod?: string
-    httpPath?: string
     description?: string
     deprecated?: boolean
 }

@@ -199,8 +199,10 @@ export class DynamicGrpcClient {
             }
 
             // Coerce string query params to matching scalar types
-            if (typeof value === 'string' && this.isBuiltinType(field.type)) {
-                result[field.name] = this.coerceScalar(field.type, value)
+            if (this.isBuiltinType(field.type)) {
+                result[field.name] = this.convertFieldValue(field, value, (item) =>
+                    typeof item === 'string' ? this.coerceScalar(field.type, item) : item,
+                )
                 continue
             }
 
@@ -215,19 +217,25 @@ export class DynamicGrpcClient {
             }
 
             if (resolvedType instanceof protobuf.Enum) {
-                result[field.name] =
-                    field.repeated && Array.isArray(value)
-                        ? value.map((v) => this.convertSingleEnumValue(resolvedType, v))
-                        : this.convertSingleEnumValue(resolvedType, value)
+                result[field.name] = this.convertFieldValue(field, value, (item) => this.convertSingleEnumValue(resolvedType, item))
             } else if (resolvedType instanceof protobuf.Type) {
-                result[field.name] =
-                    field.repeated && Array.isArray(value)
-                        ? value.map((v) => this.convertEnumValues(resolvedType, v as object))
-                        : this.convertEnumValues(resolvedType, value)
+                result[field.name] = this.convertFieldValue(field, value, (item) => this.convertEnumValues(resolvedType, item as object))
             }
         }
 
         return result
+    }
+
+    private convertFieldValue(field: protobuf.Field, value: unknown, convert: (item: unknown) => unknown): unknown {
+        if (field instanceof protobuf.MapField && typeof value === 'object') {
+            return Object.fromEntries(Object.entries(value as object).map(([key, item]) => [key, convert(item)]))
+        }
+
+        if (field.repeated) {
+            return (Array.isArray(value) ? value : [value]).map(convert)
+        }
+
+        return convert(value)
     }
 
     private convertSingleEnumValue(enumType: protobuf.Enum, value: unknown): unknown {
@@ -380,6 +388,10 @@ export class DynamicGrpcClient {
             return value === 'true' || value === '1'
         }
 
+        if (['int64', 'uint64', 'sint64', 'fixed64', 'sfixed64'].includes(fieldType) && /^-?\d+$/.test(value)) {
+            return protobuf.util.LongBits.from(value).toLong(fieldType === 'uint64' || fieldType === 'fixed64')
+        }
+
         const numericTypes = [
             'double',
             'float',
@@ -444,9 +456,9 @@ export class DynamicGrpcClient {
                 continue
             }
 
-            const entryType = type.get(field.type)
+            const entryType = type.lookup(field.type)
 
-            if (!(entryType instanceof protobuf.Type) || entryType.fieldsArray.length !== 2) {
+            if (!(entryType instanceof protobuf.Type) || !entryType.getOption('map_entry') || entryType.fieldsArray.length !== 2) {
                 continue
             }
 

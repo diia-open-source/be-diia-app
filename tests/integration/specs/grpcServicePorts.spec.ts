@@ -2,8 +2,7 @@ import { once } from 'node:events'
 import net, { AddressInfo } from 'node:net'
 import path from 'node:path'
 
-import { ChannelCredentials, ClientDuplexStream, ServiceClientConstructor, loadPackageDefinition, status } from '@grpc/grpc-js'
-import { loadSync } from '@grpc/proto-loader'
+import { ChannelCredentials, status } from '@grpc/grpc-js'
 import descriptorExt from 'protobufjs/ext/descriptor'
 import { mock } from 'vitest-mock-extended'
 
@@ -16,22 +15,7 @@ import { GrpcServer } from '../../../src/grpc/server'
 import { TestClient, TestPrivateClient } from '../generated'
 import { TestDefinition, TestPrivateDefinition } from '../generated/test-service'
 import { getApp } from '../getApp'
-
-interface ServerReflectionRequest {
-    list_services?: string
-    file_containing_symbol?: string
-}
-
-interface ServerReflectionResponse {
-    list_services_response?: { service: { name: string }[] }
-    file_descriptor_response?: { file_descriptor_proto: Buffer[] }
-    error_response?: { error_code: number }
-}
-
-interface ServerReflectionClient {
-    ServerReflectionInfo: () => ClientDuplexStream<ServerReflectionRequest, ServerReflectionResponse>
-    close: () => void
-}
+import { loadService, reflect } from '../serverReflection'
 
 interface SchemaReflectionClient {
     getSchemas: (request: object, callback: (error: (Error & { code: number }) | null) => void) => void
@@ -43,20 +27,6 @@ interface HealthClient {
     close: () => void
 }
 
-const loadService = (protoPath: string, servicePath: string[]): ServiceClientConstructor => {
-    let definition: unknown = loadPackageDefinition(loadSync(protoPath, { keepCase: true, enums: String }))
-    for (const key of servicePath) {
-        definition = (definition as Record<string, unknown>)[key]
-    }
-
-    return definition as ServiceClientConstructor
-}
-
-const ServerReflection = loadService(
-    path.resolve(__dirname, '../../../node_modules/@grpc/reflection/build/proto/grpc/reflection/v1/reflection.proto'),
-    ['grpc', 'reflection', 'v1', 'ServerReflection'],
-)
-
 const SchemaReflection = loadService(path.resolve(__dirname, '../../../proto/schema-reflection.proto'), [
     'diia',
     'schema',
@@ -65,23 +35,6 @@ const SchemaReflection = loadService(path.resolve(__dirname, '../../../proto/sch
 ])
 
 const Health = loadService(healthProtoPath, ['grpc', 'health', 'v1', 'Health'])
-
-const reflect = async (port: number, request: ServerReflectionRequest): Promise<ServerReflectionResponse> => {
-    const client = new ServerReflection(`localhost:${port}`, ChannelCredentials.createInsecure()) as unknown as ServerReflectionClient
-    const call = client.ServerReflectionInfo()
-    const { promise, resolve, reject } = Promise.withResolvers<ServerReflectionResponse>()
-
-    call.on('data', resolve)
-    call.on('error', reject)
-    call.write(request)
-
-    try {
-        return await promise
-    } finally {
-        call.end()
-        client.close()
-    }
-}
 
 const listServices = async (port: number): Promise<string[] | undefined> => {
     const response = await reflect(port, { list_services: '*' })
@@ -289,7 +242,35 @@ describe('grpc server with health checks', () => {
         await server.start(() => ({}))
         try {
             await expect(checkHealth(extraPort)).resolves.toBe('SERVING')
-            await expect(listServices(extraPort)).resolves.toEqual(['ua.gov.diia.test.Test', 'grpc.health.v1.Health'])
+            expect((await listServices(extraPort))?.toSorted()).toEqual(['grpc.health.v1.Health', 'ua.gov.diia.test.Test'])
+        } finally {
+            await server.stop()
+        }
+    })
+})
+
+describe('grpc server in production', () => {
+    it('serves neither server reflection nor SchemaReflection even when reflection is enabled', async () => {
+        const envService = mock<EnvService>()
+
+        envService.isProd.mockReturnValue(true)
+        const server = new GrpcServer(
+            {
+                isEnabled: true,
+                port: 0,
+                services: ['ua.gov.diia.test.Test'],
+                isReflectionEnabled: true,
+                maxReceiveMessageLength: 4 * 1024 * 1024,
+            },
+            mock<Logger>(),
+            envService,
+            undefined,
+        )
+        const port = await server.start(() => ({}))
+
+        try {
+            await expect(reflect(port, { list_services: '*' })).rejects.toMatchObject({ code: status.UNIMPLEMENTED })
+            await expect(getSchemasErrorCode(port)).resolves.toBe(status.UNIMPLEMENTED)
         } finally {
             await server.stop()
         }

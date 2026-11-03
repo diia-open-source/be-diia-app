@@ -1,119 +1,56 @@
 import { register } from 'prom-client'
 
-import { MetricOptions, Observer } from '@diia-inhouse/diia-metrics'
-import { Env } from '@diia-inhouse/env'
+import { MetricNames } from '../../../src/interfaces/metrics.js'
+import { createGrpcStreamConnectionsObserver, createGrpcStreamPendingCloseObserver, createNodeEnvObserver } from '../../../src/metrics.js'
 
-import { MetricDescriptions, MetricNames, NodeEnvLabelsMap, nodeEnvAllowedFields } from '../../../src/interfaces/metrics.js'
-import { createGrpcStreamConnectionsObserver, createGrpcStreamPendingCloseObserver } from '../../../src/metrics.js'
-
-describe('grpc stream metrics', () => {
+describe('metric observers', () => {
     afterEach(() => {
         register.clear()
     })
 
-    it('should call onCollect on each scrape, not at registration time', async () => {
+    it.each([
+        {
+            name: MetricNames.GrpcStreamConnections,
+            observe: (read: () => number): unknown => createGrpcStreamConnectionsObserver(read, 'test-service'),
+            values: [3, 7],
+            labels: { service: 'test-service' },
+        },
+        {
+            name: MetricNames.GrpcStreamPendingClose,
+            observe: (read: () => number): unknown => createGrpcStreamPendingCloseObserver(read, 'test-service'),
+            values: [2, 5],
+            labels: { service: 'test-service' },
+        },
+    ])('should report the current $name on every scrape', async ({ name, observe, values: [first, second], labels }) => {
         // Arrange
-        const serviceName = 'test-service'
-        const activeConnectionsCount = 3
-        const getActiveConnections = vi.fn<() => number>(() => activeConnectionsCount)
+        const read = vi.fn<() => number>(() => first)
 
-        createGrpcStreamConnectionsObserver(getActiveConnections, serviceName)
-
-        expect(getActiveConnections).not.toHaveBeenCalled()
-
-        const metric = register.getSingleMetric(MetricNames.GrpcStreamConnections)
-
-        // Act
-        await register.metrics()
+        observe(read)
+        const metric = register.getSingleMetric(name)
 
         // Assert
-        expect(getActiveConnections).toHaveBeenCalledTimes(1)
-        expect(await metric?.get()).toMatchObject({
-            values: [expect.objectContaining({ value: activeConnectionsCount, labels: { service: serviceName } })],
-        })
-
-        const newActiveConnectionsCount = 7
-
-        getActiveConnections.mockClear()
-        getActiveConnections.mockReturnValue(newActiveConnectionsCount)
+        expect(read).not.toHaveBeenCalled()
+        expect(await metric?.get()).toMatchObject({ values: [{ value: first, labels }] })
 
         // Act
-        await register.metrics()
+        read.mockReturnValue(second)
 
         // Assert
-        expect(getActiveConnections).toHaveBeenCalledTimes(1)
-        expect(await metric?.get()).toMatchObject({
-            values: [expect.objectContaining({ value: newActiveConnectionsCount, labels: { service: serviceName } })],
-        })
+        expect(await metric?.get()).toMatchObject({ values: [{ value: second, labels }] })
     })
 
-    it('should expose pending close handlers count on collect', async () => {
+    it('should report the node env as a single labelled series on every scrape', async () => {
         // Arrange
-        const serviceName = 'test-service'
-        const pendingStreamCloseCount = 2
+        const getEnv = vi.fn<() => string>(() => 'stage')
 
-        createGrpcStreamPendingCloseObserver(() => pendingStreamCloseCount, serviceName)
-
-        const metric = register.getSingleMetric(MetricNames.GrpcStreamPendingClose)
+        createNodeEnvObserver(getEnv)
+        const metric = register.getSingleMetric(MetricNames.NodeEnv)
 
         // Act
         await register.metrics()
-
-        // Assert
-        expect(metric).toBeDefined()
-        expect(await metric?.get()).toMatchObject({
-            values: [expect.objectContaining({ value: pendingStreamCloseCount, labels: { service: serviceName } })],
-        })
-    })
-
-    it('should use the same onCollect contract as Application diia_node_env observer', async () => {
-        // Arrange
-        const serviceName = 'test-service'
-        const getEnv = vi.fn<() => string>(() => Env.Stage)
-
-        const nodeEnvObserver = new Observer<NodeEnvLabelsMap>(MetricNames.NodeEnv, nodeEnvAllowedFields, MetricDescriptions.NodeEnv, {
-            onCollect: (): ReturnType<Required<MetricOptions<NodeEnvLabelsMap>>['onCollect']> => ({
-                labels: { env: getEnv() },
-                value: 1,
-            }),
-        })
-
-        const streamConnectionsCount = 4
-        const getStreamConnections = vi.fn<() => number>(() => streamConnectionsCount)
-
-        createGrpcStreamConnectionsObserver(getStreamConnections, serviceName)
-
-        // Act
         await register.metrics()
 
         // Assert
-        expect(nodeEnvObserver).toBeDefined()
-
-        const nodeEnvMetric = register.getSingleMetric(MetricNames.NodeEnv)
-        const streamConnectionsMetric = register.getSingleMetric(MetricNames.GrpcStreamConnections)
-
-        expect(getEnv).toHaveBeenCalledTimes(1)
-        expect(getStreamConnections).toHaveBeenCalledTimes(1)
-
-        expect(await nodeEnvMetric?.get()).toMatchObject({
-            values: [expect.objectContaining({ labels: { env: Env.Stage }, value: 1 })],
-        })
-        expect(await streamConnectionsMetric?.get()).toMatchObject({
-            values: [expect.objectContaining({ labels: { service: serviceName }, value: streamConnectionsCount })],
-        })
-
-        const newStreamConnectionsCount = 9
-
-        getStreamConnections.mockClear()
-        getStreamConnections.mockReturnValue(newStreamConnectionsCount)
-
-        // Act
-        await register.metrics()
-
-        // Assert
-        expect(getStreamConnections).toHaveBeenCalledTimes(1)
-        expect(await streamConnectionsMetric?.get()).toMatchObject({
-            values: [expect.objectContaining({ value: newStreamConnectionsCount })],
-        })
+        expect(await metric?.get()).toMatchObject({ values: [{ value: 1, labels: { env: 'stage' } }] })
     })
 })

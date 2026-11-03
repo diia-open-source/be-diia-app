@@ -48,18 +48,9 @@ export class SchemaReflectionInitializer {
     }
 
     private static extractMethodsFromPkgDefs(pkgDefs: PackageDefinition): MethodFromPkgDef[] {
-        if (!pkgDefs) {
-            return []
-        }
-
         const methods: MethodFromPkgDef[] = []
 
         for (const definition of Object.values(pkgDefs)) {
-            if (this.isMethodDefinition(definition)) {
-                methods.push(this.extractMethodInfo(definition))
-                continue
-            }
-
             if (typeof definition === 'object' && definition !== null) {
                 for (const methodDef of Object.values(definition)) {
                     if (this.isMethodDefinition(methodDef)) {

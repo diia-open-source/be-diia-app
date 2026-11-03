@@ -5,7 +5,7 @@ import protobuf from 'protobufjs'
 
 import type { Logger } from '@diia-inhouse/types'
 
-import { HTTP_METHODS, MethodMetadata, ProtoMetadata } from './types.js'
+import { MethodMetadata, ProtoMetadata } from './types.js'
 
 interface DeprecationInfo {
     deprecated: boolean
@@ -106,7 +106,6 @@ export class ProtoMetadataExtractor {
             for (const nested of Object.values(ns.nested || {})) {
                 if (nested instanceof protobuf.Service) {
                     for (const method of nested.methodsArray) {
-                        const httpOption = this.extractHttpOption(method)
                         const servicePath = nested.fullName.startsWith('.') ? nested.fullName.slice(1) : nested.fullName
                         const { deprecated, description } = this.extractDeprecation(method)
 
@@ -114,8 +113,6 @@ export class ProtoMetadataExtractor {
                             serviceName: nested.name,
                             methodName: method.name,
                             fullPath: `/${servicePath}/${method.name}`,
-                            httpMethod: httpOption?.method,
-                            httpPath: httpOption?.path,
                             description,
                             deprecated,
                         })
@@ -194,25 +191,5 @@ export class ProtoMetadataExtractor {
         const deprecated = isDeprecatedViaOption || isDeprecatedViaComment
 
         return { deprecated, description: rawComment }
-    }
-
-    private extractHttpOption(method: protobuf.Method): { method: string; path: string } | undefined {
-        const options = method.parsedOptions
-        if (!options) {
-            return undefined
-        }
-
-        for (const opt of options) {
-            const httpRule = opt['(google.api.http)'] as Record<string, string> | undefined
-            if (httpRule) {
-                for (const httpMethod of HTTP_METHODS) {
-                    if (httpRule[httpMethod]) {
-                        return { method: httpMethod.toUpperCase(), path: httpRule[httpMethod] }
-                    }
-                }
-            }
-        }
-
-        return undefined
     }
 }

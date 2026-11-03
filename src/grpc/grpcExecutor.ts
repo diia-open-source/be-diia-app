@@ -1,6 +1,7 @@
 import { Metadata } from '@grpc/grpc-js'
 
 import { Logger } from '@diia-inhouse/types'
+import { utils } from '@diia-inhouse/utils'
 
 import { DynamicGrpcClient, DynamicGrpcClientOptions } from './dynamicClient.js'
 
@@ -66,9 +67,7 @@ export class GrpcExecutor {
                 for (const [key, value] of Object.entries(metadataMap)) {
                     if (key === 'original-error') {
                         try {
-                            const decoded = decodeURIComponent(String(value))
-
-                            errorMetadata[key] = JSON.parse(decoded)
+                            errorMetadata[key] = utils.decodeValuesWithIterator(JSON.parse(String(value)))
                         } catch {
                             errorMetadata[key] = String(value)
                         }
