@@ -1,6 +1,6 @@
 {
     "name": "@diia-inhouse/diia-app",
-    "version": "34.6.1",
+    "version": "34.6.2",
     "description": "Application package with IoC container",
     "license": "SEE LICENSE IN LICENSE.md",
     "author": "diia-team",
@@ -63,7 +63,7 @@
         "awilix": "12.0.5",
         "cookie-parser": "1.4.7",
         "dotenv-flow": "4.1.0",
-        "glob": "13.0.6",
+        "glob": "14.0.2",
         "lodash": "4.18.1",
         "moleculer": "0.14.35",
         "moleculer-web": "0.10.8",
