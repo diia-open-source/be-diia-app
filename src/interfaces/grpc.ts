@@ -3,8 +3,11 @@ import { CallOptions as DefaultGrpcCallOptions } from 'nice-grpc'
 
 import { ActionSession, ActionVersion } from '@diia-inhouse/types'
 
+import { GrpcTlsClientOptions, GrpcTlsServerOptions } from '../grpc/tls/tls.types.js'
+
 export interface GrpcClientConfig {
     defaultDeadlineMs?: number
+    tls?: GrpcTlsClientOptions
 }
 
 export type GrpcServiceBinding = string | GrpcServicePortBinding
@@ -22,6 +25,7 @@ export interface GrpcServerConfig {
     maxReceiveMessageLength: number
     streamsCloseTimeoutMs?: number
     keepAlive?: GrpcServerKeepalive
+    tls?: GrpcTlsServerOptions
 }
 
 export interface GrpcServerKeepalive {

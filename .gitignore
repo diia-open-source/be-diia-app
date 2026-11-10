@@ -492,4 +492,6 @@ dist/
 
 tests/integration/generated/
 
+tests/integration/fixtures/tls/
+
 .serena

@@ -1,6 +1,6 @@
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 
-import { Application, GrpcClientFactory, ServiceContext, ServiceOperator, asFunction } from '../../src'
+import { Application, ConfigFactoryFn, GrpcClientFactory, ServiceContext, ServiceOperator, asFunction } from '../../src'
 import { configFactory } from './config'
 import deps from './deps'
 import { TestDefinition, TestPrivateDefinition } from './generated/test-service'
@@ -11,10 +11,12 @@ const modules = {
     actions: import.meta.glob('/tests/integration/actions/**/*.ts'),
 }
 
-export async function getApp(): Promise<ServiceOperator<AppConfig, AppDeps>> {
+export async function getApp(
+    configFactoryOverride: ConfigFactoryFn<AppConfig> = configFactory,
+): Promise<ServiceOperator<AppConfig, AppDeps>> {
     const app = new Application<ServiceContext<AppConfig, AppDeps>>('Auth', new NodeTracerProvider(), {})
 
-    await app.setConfig(configFactory)
+    await app.setConfig(configFactoryOverride)
 
     await app.setDeps(deps)
 

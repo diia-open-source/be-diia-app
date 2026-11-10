@@ -16,6 +16,8 @@ export * from './dynamicClient.js'
 
 export * from './grpcExecutor.js'
 
+export * from './tls/index.js'
+
 export function clientCallOptions(grpcMetadata: GrpcClientMetadata): CallOptions {
     const metadata = new Metadata()
 

@@ -1,50 +1,25 @@
-import { Metadata, ServiceClientConstructor, credentials, loadPackageDefinition } from '@grpc/grpc-js'
+import { ChannelCredentials, Metadata, ServiceClientConstructor, loadPackageDefinition } from '@grpc/grpc-js'
 import { loadSync } from '@grpc/proto-loader'
 
+import { GrpcTlsCredentialService } from '../tls/credential.js'
+import { GrpcTlsClientOptions } from '../tls/tls.types.js'
+import { DiscoveredSchema, GrpcSchemaClient, SchemaReflectionClientWithClose } from './client.types.js'
 import { schemaReflectionProtoPath } from './grpcSchemaService.js'
-import { HttpMapping, PROTO_LOADER_OPTIONS, ServiceSchemaDto } from './types.js'
-
-export interface DiscoveredAction {
-    name: string
-    grpcMethod: string
-    sessionType: string
-    requestSchema: object
-    responseSchema: object
-    requestTypeName?: string
-    responseTypeName?: string
-    httpMapping?: HttpMapping
-    description?: string
-    deprecated?: boolean
-    requestStream?: boolean
-    responseStream?: boolean
-}
-
-export interface DiscoveredSchema {
-    serviceName: string
-    version: string
-    actions: DiscoveredAction[]
-    definitions: Record<string, object>
-}
-
-interface GrpcSchemaClient {
-    getSchemas: (
-        request: Record<string, never>,
-        metadataOrCallback: Metadata | ((error: Error | null, response: ServiceSchemaDto) => void),
-        callback?: (error: Error | null, response: ServiceSchemaDto) => void,
-    ) => void
-}
-
-interface SchemaReflectionClientWithClose extends GrpcSchemaClient {
-    close(): void
-}
+import { PROTO_LOADER_OPTIONS, ServiceSchemaDto } from './types.js'
 
 export class SchemaReflectionClient {
     private readonly serviceDefinition: ServiceClientConstructor | undefined
 
     private readonly clients: Map<string, SchemaReflectionClientWithClose> = new Map()
 
-    constructor() {
+    private readonly channelCredentials: ChannelCredentials
+
+    constructor(tlsOptions?: GrpcTlsClientOptions) {
         this.serviceDefinition = this.loadServiceDefinition()
+
+        const tlsCredentialService = new GrpcTlsCredentialService(tlsOptions)
+
+        this.channelCredentials = tlsCredentialService.createChannelCredentials()
     }
 
     async fetchSchema(address: string, metadata?: Metadata): Promise<DiscoveredSchema | null> {
@@ -89,7 +64,7 @@ export class SchemaReflectionClient {
             return undefined
         }
 
-        const client = new this.serviceDefinition(address, credentials.createInsecure()) as unknown as SchemaReflectionClientWithClose
+        const client = new this.serviceDefinition(address, this.channelCredentials) as unknown as SchemaReflectionClientWithClose
 
         this.clients.set(address, client)
 

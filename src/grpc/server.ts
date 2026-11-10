@@ -183,7 +183,7 @@ export class GrpcServer {
     private async bind(server: Server, port: number): Promise<number> {
         const { promise, resolve, reject } = Promise.withResolvers<number>()
 
-        server.bindAsync(`0.0.0.0:${port}`, ServerCredentials.createInsecure(), (error, boundPort) => {
+        server.bindAsync(`0.0.0.0:${port}`, this.getServerCredentials(), (error, boundPort) => {
             if (error) {
                 this.logger.error(`grpc service failed to start on port ${port}`)
 
@@ -262,5 +262,22 @@ export class GrpcServer {
         const schemaService = new GrpcSchemaService(this.serviceName, this.version, this.schemaRegistry)
 
         schemaService.addToServer(server, schemaReflectionService)
+    }
+
+    private getServerCredentials(): ServerCredentials {
+        const tls = this.config.tls
+
+        if (!tls?.isEnabled) {
+            return ServerCredentials.createInsecure()
+        }
+
+        const {
+            requireClientCert = true,
+            certs: { cert, key, rootCert },
+        } = tls
+
+        const keyCertPairs = [{ cert_chain: cert, private_key: key }]
+
+        return ServerCredentials.createSsl(rootCert, keyCertPairs, requireClientCert)
     }
 }

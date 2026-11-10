@@ -13,3 +13,5 @@ export * from './actionExecutor.js'
 export * from './errorCode.js'
 
 export * from './featureFlag.js'
+
+export * from '../grpc/tls/tls.types.js'

@@ -10,6 +10,8 @@ export { SchemaRegistry } from './schemaRegistry.js'
 
 export { SchemaReflectionInitializer } from './schemaReflectionInitializer.js'
 
-export { SchemaReflectionClient, DiscoveredSchema, DiscoveredAction } from './schemaReflectionClient.js'
+export { SchemaReflectionClient } from './client.js'
+
+export { DiscoveredAction, DiscoveredSchema } from './client.types.js'
 
 export * from './types.js'

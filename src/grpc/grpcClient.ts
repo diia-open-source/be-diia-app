@@ -22,11 +22,13 @@ import { NetworkUtils, utils } from '@diia-inhouse/utils'
 import { BaseConfig } from '../interfaces/config.js'
 import { CallOptions, GrpcClientMetadata } from '../interfaces/grpc.js'
 import { ATTR_RPC_GRPC_DESTINATION_SERVICE_NAME, ATTR_RPC_GRPC_REQUEST_METADATA, ATTR_RPC_SYSTEM } from '../interfaces/tracing.js'
+import { GrpcTlsCredentialService } from './tls/credential.js'
 import { bindAsyncGenerator } from './utils.js'
 import { registerWrappers } from './wrappers.js'
 
 export class GrpcClientFactory {
     private readonly defaultDeadlineMs: number
+    private readonly channelCredentials: ChannelCredentials
 
     constructor(
         private readonly config: BaseConfig,
@@ -36,7 +38,13 @@ export class GrpcClientFactory {
 
         private readonly asyncLocalStorage?: AsyncLocalStorage<QueueContext>,
     ) {
-        this.defaultDeadlineMs = this.config.grpcClient?.defaultDeadlineMs ?? DurationMs.Minute
+        const { grpcClient: { tls, defaultDeadlineMs } = {} } = this.config
+
+        this.defaultDeadlineMs = defaultDeadlineMs ?? DurationMs.Minute
+
+        const tlsCredentialService = new GrpcTlsCredentialService(tls)
+
+        this.channelCredentials = tlsCredentialService.createChannelCredentials()
         registerWrappers(this.logger)
     }
 
@@ -51,7 +59,7 @@ export class GrpcClientFactory {
             'grpc.keepalive_permit_without_calls': 1,
         }
 
-        const channelImplementation = createChannel(serviceAddress, ChannelCredentials.createInsecure(), {
+        const channelImplementation = createChannel(serviceAddress, this.channelCredentials, {
             ...defaultOptions,
             ...channelOptions,
         })
