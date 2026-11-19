@@ -10,6 +10,7 @@ import {
     InjectionMode,
     ModuleDescriptor,
     NameAndRegistrationPair,
+    Resolver,
     asClass,
     asValue,
     createContainer,
@@ -131,9 +132,7 @@ export class Application<TContext extends ServiceContext> extends ApplicationHoo
 
         const appDeps = await factory(this.config, this.baseContainer)
 
-        this.container = this.baseContainer
-            .createScope<AppDepsType<TContext>>()
-            .register(appDeps as NameAndRegistrationPair<DepsType<TContext>>)
+        this.container = this.baseContainer.createScope<AppDepsType<TContext>>().register(appDeps as Record<string, Resolver<unknown>>)
 
         return this
     }

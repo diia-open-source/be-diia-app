@@ -18,8 +18,6 @@ export const SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES = 'messaging.rabbitmq.attrib
 // https://github.com/open-telemetry/opentelemetry-js/blob/b6fa2b9e4d9a41e98408e724e11dc9ce2f38dd91/semantic-conventions/src/experimental_attributes.ts
 // as per official guide https://github.com/open-telemetry/opentelemetry-js/blob/main/semantic-conventions/README.md#unstable-semconv
 
-export const ATTR_K8S_POD_NAME = 'k8s.pod.name' as const
-
 export const ATTR_MESSAGING_SYSTEM = 'messaging.system' as const
 
 export const ATTR_MESSAGE_ID = 'message.id' as const

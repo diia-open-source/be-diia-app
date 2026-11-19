@@ -1,3 +1,5 @@
+import { compileFunction } from 'node:vm'
+
 import ts from 'typescript'
 
 import openApiPlugin from '../../../../src/plugins/openapi'
@@ -121,7 +123,7 @@ const compileActionResponses = (): Record<keyof typeof actions, unknown> => {
         Object.keys(actions).map((name) => {
             const module = { exports: {} as { default: new () => { __actionResponse?: unknown } } }
 
-            new Function('module', 'exports', emitted.get(`${actionsDir}/${name}.js`) ?? '')(module, module.exports)
+            compileFunction(emitted.get(`${actionsDir}/${name}.js`) ?? '', ['module', 'exports'])(module, module.exports)
             const response = new module.exports.default().__actionResponse
 
             return [name, response === undefined ? undefined : JSON.parse(JSON.stringify(response))]

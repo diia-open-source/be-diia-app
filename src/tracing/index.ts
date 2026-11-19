@@ -9,12 +9,12 @@ import type { IgnoreIncomingRequestFunction } from '@opentelemetry/instrumentati
 import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
-import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
+import { ATTR_K8S_POD_NAME, ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions'
 import lodash from 'lodash'
 
 import { EnvService } from '@diia-inhouse/env'
 
-import { ATTR_K8S_POD_NAME, OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing.js'
+import { OpentelemetryTracingConfig, SEMATTRS_MESSAGING_RABBITMQ_ATTRIBUTES } from '../interfaces/tracing.js'
 
 // oxlint-disable-next-line typescript/unbound-method
 const { merge } = lodash
